@@ -1,0 +1,15 @@
+[package]
+name = "mart"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mart"
+path = "src/main.rs"
+
+[dependencies]
+mart-core = { path = "../mart-core" }
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
