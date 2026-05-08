@@ -1,0 +1,21 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mdata-core",
+    "crates/mdata",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+anyhow    = "1"
+clap      = { version = "4", features = ["derive", "env"] }
+serde     = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite  = { version = "0.31", features = ["bundled"] }
+flate2    = "1"
+ureq      = { version = "2", features = ["json"] }
+thiserror = "1"

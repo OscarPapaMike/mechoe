@@ -1,0 +1,12 @@
+data/
+render/*
+!render/.gitkeep
+
+# Rust build artifacts
+target/
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/

@@ -1,7 +1,4 @@
-//! Minimal subset of Scryfall's card object. We deserialize more than M1 needs
-//! so later milestones don't require a schema change.
-
-pub mod api;
+//! Minimal subset of Scryfall's card object needed for rendering.
 
 use serde::Deserialize;
 
@@ -23,6 +20,11 @@ pub struct Card {
     pub colors: Option<Vec<String>>,
     #[serde(default)]
     pub color_identity: Option<Vec<String>>,
+    /// Scryfall set code (e.g. "drk"). Used for the bottom-left info stamp.
+    #[serde(rename = "set", default)]
+    pub set_code: Option<String>,
+    #[serde(default)]
+    pub collector_number: Option<String>,
 }
 
 impl Card {
@@ -34,6 +36,25 @@ impl Card {
             .as_deref()
             .or(self.color_identity.as_deref())
             .unwrap_or(&[]);
+
+        // Lands and artifacts get their own frame identity regardless of color count.
+        let tl = &self.type_line;
+        if tl.contains("Basic Land") {
+            // Basic lands get the color of their land subtype.
+            if tl.contains("Plains")   { return FrameColor::White; }
+            if tl.contains("Island")   { return FrameColor::Blue; }
+            if tl.contains("Swamp")    { return FrameColor::Black; }
+            if tl.contains("Mountain") { return FrameColor::Red; }
+            if tl.contains("Forest")   { return FrameColor::Green; }
+            return FrameColor::Land; // e.g. Wastes
+        }
+        if tl.contains("Land") && colors.is_empty() {
+            return FrameColor::Land;
+        }
+        if colors.is_empty() && tl.contains("Artifact") {
+            return FrameColor::Artifact;
+        }
+
         match colors.len() {
             0 => FrameColor::Colorless,
             1 => match colors[0].as_str() {
@@ -82,4 +103,6 @@ pub enum FrameColor {
     Green,
     Gold,
     Colorless,
+    Artifact,
+    Land,
 }

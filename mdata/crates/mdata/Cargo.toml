@@ -1,0 +1,10 @@
+[package]
+name = "mdata"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+mdata-core = { path = "../mdata-core" }
+anyhow.workspace = true
+clap.workspace = true

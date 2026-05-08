@@ -108,10 +108,12 @@ impl SymbolCache {
             .ok_or_else(|| SymbolError::Raster(token.to_string()))?;
         resvg::render(tree, Transform::from_scale(scale, scale), &mut pixmap.as_mut());
 
+        // tiny_skia pixmaps store premultiplied alpha — declare Premul so Skia
+        // composites correctly and avoids dark-fringe artifacts at circle edges.
         let info = ImageInfo::new(
             (target_w as i32, target_h_px as i32),
             ColorType::RGBA8888,
-            AlphaType::Unpremul,
+            AlphaType::Premul,
             None,
         );
         let row_bytes = (target_w * 4) as usize;

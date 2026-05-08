@@ -1,7 +1,7 @@
 //! Rules-text layout: paragraphs of mixed body text + inline mana symbols,
 //! greedy line break, font-size auto-fit to the rules box.
 
-use skia_safe::{Canvas, Color, Font, Paint, Rect, Typeface};
+use skia_safe::{Canvas, ClipOp, Color, Font, Paint, Rect, Typeface};
 
 use crate::symbols::{parse_mana_cost_inline, InlineSpan, SymbolCache};
 
@@ -48,6 +48,7 @@ struct Layout {
     lines: Vec<Line>,
     total_height_px: f32,
     line_left_x: f32,
+    line_right_x: f32,
 }
 
 fn atom_width(
@@ -134,6 +135,7 @@ fn layout(
         lines,
         total_height_px: y - inner.top,
         line_left_x: inner.left,
+        line_right_x: inner.right,
     }
 }
 
@@ -146,6 +148,7 @@ pub fn draw_rules(
     base_size_px: f32,
     min_size_px: f32,
     font_skew_x: f32,
+    text_color: Color,
 ) -> f32 {
     let paragraphs = tokenize(oracle_text);
     if paragraphs.iter().all(|p| p.is_empty()) {
@@ -181,7 +184,10 @@ pub fn draw_rules(
     // Try the base size first; if it fits, use it.
     let (lay, font, sw) = try_size(base_size_px);
     if lay.total_height_px <= inner.height() {
-        draw_layout(canvas, &paragraphs, &lay, &font, cache.as_deref_mut(), sw);
+        canvas.save();
+        canvas.clip_rect(rect_px, ClipOp::Intersect, true);
+        draw_layout(canvas, &paragraphs, &lay, &font, cache.as_deref_mut(), sw, text_color);
+        canvas.restore();
         return base_size_px;
     }
 
@@ -204,7 +210,11 @@ pub fn draw_rules(
         let (lay, font, sw) = try_size(min_size_px);
         (lay, font, sw, min_size_px)
     });
-    draw_layout(canvas, &paragraphs, &lay, &font, cache.as_deref_mut(), sw);
+    // Clip to the box so that text at min_size never overflows into the P/T area.
+    canvas.save();
+    canvas.clip_rect(rect_px, ClipOp::Intersect, true);
+    draw_layout(canvas, &paragraphs, &lay, &font, cache.as_deref_mut(), sw, text_color);
+    canvas.restore();
     size
 }
 
@@ -215,18 +225,47 @@ fn draw_layout(
     font: &Font,
     mut cache: Option<&mut SymbolCache>,
     symbol_w_px: f32,
+    text_color: Color,
 ) {
-    let space_w_px = font.measure_str(" ", None).0.max(symbol_w_px * 0.25);
+    let default_space_w = font.measure_str(" ", None).0.max(symbol_w_px * 0.25);
+    let plain_symbols = cache.is_none();
+    let line_w = layout.line_right_x - layout.line_left_x;
 
     let mut text_paint = Paint::default();
     text_paint.set_anti_alias(true);
-    text_paint.set_color(Color::BLACK);
+    text_paint.set_color(text_color);
 
     let mut img_paint = Paint::default();
     img_paint.set_anti_alias(true);
 
     for line in &layout.lines {
         let atoms = &paragraphs[line.para_idx][line.start..line.end];
+
+        // Justify all lines except the last line of each paragraph.
+        // Also skip justification if the natural content is too short (< 60 %
+        // of the line width) to avoid huge gaps on orphaned short lines.
+        let is_last = line.end >= paragraphs[line.para_idx].len();
+        let space_w = if !is_last {
+            let n_spaces = atoms.iter().filter(|a| matches!(a, Atom::Space)).count();
+            if n_spaces > 0 {
+                let word_w: f32 = atoms.iter().map(|a| match a {
+                    Atom::Word(w)   => font.measure_str(w, None).0,
+                    Atom::Symbol(t) => if plain_symbols { font.measure_str(t, None).0 } else { symbol_w_px },
+                    Atom::Space     => 0.0,
+                }).sum();
+                let natural_fill = word_w / line_w;
+                if natural_fill >= 0.60 {
+                    (line_w - word_w) / n_spaces as f32
+                } else {
+                    default_space_w
+                }
+            } else {
+                default_space_w
+            }
+        } else {
+            default_space_w
+        };
+
         let mut x = layout.line_left_x;
         for atom in atoms {
             match atom {
@@ -235,14 +274,12 @@ fn draw_layout(
                     x += font.measure_str(w, None).0;
                 }
                 Atom::Space => {
-                    x += space_w_px;
+                    x += space_w;
                 }
                 Atom::Symbol(token) => {
                     let drew = if let Some(cache) = cache.as_deref_mut() {
                         match cache.rasterize(token, symbol_w_px) {
                             Ok(image) => {
-                                // Vertically place so most of the symbol sits
-                                // above the baseline like a cap-height letter.
                                 let top = line.baseline_y - symbol_w_px * 0.85;
                                 let dst = Rect::from_xywh(x, top, symbol_w_px, symbol_w_px);
                                 canvas.draw_image_rect(&image, None, dst, &img_paint);
@@ -257,8 +294,6 @@ fn draw_layout(
                         false
                     };
                     if !drew {
-                        // Premodern style: render the symbol token as a plain
-                        // letter/number (no braces). `{T}` → `T`, `{W/U}` → `W/U`.
                         canvas.draw_str(token, (x, line.baseline_y), font, &text_paint);
                         x += font.measure_str(token, None).0;
                     } else {

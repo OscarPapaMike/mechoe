@@ -3,13 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use skia_safe::{
-    surfaces, Color, Color4f, Data, EncodedImageFormat, Image, Paint, Path as SkPath, RRect,
-    Vector,
+    paint, shaders as skia_shaders, color_filters, gradient_shader, image_filters,
+    surfaces, BlendMode, Color, Color4f, Data, EncodedImageFormat, Font, Image, Paint,
+    Path as SkPath, RRect, TileMode, Vector,
 };
 
 use crate::fonts::Fonts;
-use crate::frame::FrameSpec;
-use crate::geometry::{card_size_px, Dpi, MmRect};
+use crate::frame::{CardStyle, FrameSpec};
+use crate::geometry::{card_size_px, Dpi, MmRect, CARD_HEIGHT_MM, CARD_WIDTH_MM};
 use crate::rules::draw_rules;
 use crate::scryfall::Card;
 use crate::symbols::{parse_mana_cost, SymbolCache};
@@ -32,11 +33,24 @@ pub struct RenderOptions {
     pub dpi: Dpi,
     pub fonts_dir: Option<PathBuf>,
     pub symbols_dir: Option<PathBuf>,
+    /// Directory of rail texture images (e.g. `_meta/rails/red-c.png`).
+    /// When present, classic frames sample real-material images instead of noise.
+    pub rails_dir: Option<PathBuf>,
+    /// If Some, draw a bottom-left info stamp: "<SET>  <NUM> | <version>".
+    pub stamp_version: Option<String>,
+    pub card_style: CardStyle,
 }
 
 impl Default for RenderOptions {
     fn default() -> Self {
-        Self { dpi: Dpi::default(), fonts_dir: None, symbols_dir: None }
+        Self {
+            dpi: Dpi::default(),
+            fonts_dir: None,
+            symbols_dir: None,
+            rails_dir: None,
+            stamp_version: None,
+            card_style: CardStyle::Basic,
+        }
     }
 }
 
@@ -48,7 +62,14 @@ pub fn render_png(
     let dpi = opts.dpi;
     let (w_px, h_px) = card_size_px(dpi);
 
-    let frame = FrameSpec::premodern(card.frame_color());
+    let mut frame = match opts.card_style {
+        CardStyle::Basic   => FrameSpec::basic(card.frame_color()),
+        CardStyle::Classic => FrameSpec::classic(card.frame_color()),
+    };
+    // Basic lands: title bar uses the generic Land color, type area keeps the land's identity color.
+    if card.type_line.contains("Basic Land") {
+        frame.title_frame_color = crate::scryfall::FrameColor::Land;
+    }
     let fonts = Fonts::load(opts.fonts_dir.as_deref());
     let mut symbol_cache = opts.symbols_dir.as_ref().map(|d| SymbolCache::new(d.clone()));
 
@@ -66,15 +87,62 @@ pub fn render_png(
     black.set_color(Color::BLACK);
     canvas.draw_rrect(rrect, &black);
 
-    // 2. Inner area filled with ALT color — becomes the bottom-half background.
-    let mut alt_paint = Paint::new(frame.alt_color(), None);
+    let mut alt_paint   = Paint::new(frame.alt_color(),   None);
     alt_paint.set_anti_alias(true);
-    canvas.draw_rect(frame.inner_rect().to_skia(dpi), &alt_paint);
-
-    // 3. Title bar painted in MAIN color.
-    let mut main_paint = Paint::new(frame.main_color(), None);
+    let mut main_paint  = Paint::new(frame.main_color(),  None);
     main_paint.set_anti_alias(true);
-    canvas.draw_rect(frame.title_bar.to_skia(dpi), &main_paint);
+    let mut title_paint = Paint::new(frame.title_color(), None);
+    title_paint.set_anti_alias(true);
+
+    // 2-3. Background fills — differ by style.
+    match frame.card_style {
+        CardStyle::Basic => {
+            // Alt color fills the inner area; main color paints the title bar on top.
+            canvas.draw_rect(frame.inner_rect().to_skia(dpi), &alt_paint);
+            // Dual land: 8 concentric rectangular rings alternating the two mana colors.
+            let ci = card.color_identity.as_deref().unwrap_or(&[]);
+            if card.type_line.contains("Land")
+                && !card.type_line.contains("Basic")
+                && ci.len() >= 2
+            {
+                let color_a = dual_letter_color(&ci[0]);
+                let color_b = dual_letter_color(&ci[1]);
+                let inner_px = frame.inner_rect().to_skia(dpi);
+                const N_RINGS: u32 = 8;
+                let step_x = inner_px.width()  / (2 * N_RINGS) as f32;
+                let step_y = inner_px.height() / (2 * N_RINGS) as f32;
+                for i in 0..N_RINGS {
+                    let color = if i % 2 == 0 { color_a } else { color_b };
+                    let mut ring_paint = Paint::new(color, None);
+                    ring_paint.set_anti_alias(true);
+                    let s = i as f32;
+                    let rect = skia_safe::Rect::new(
+                        inner_px.left   + s * step_x,
+                        inner_px.top    + s * step_y,
+                        inner_px.right  - s * step_x,
+                        inner_px.bottom - s * step_y,
+                    );
+                    canvas.draw_rect(rect, &ring_paint);
+                }
+            }
+            canvas.draw_rect(frame.title_bar.to_skia(dpi), &title_paint);
+        }
+        CardStyle::Classic => {
+            // Main color fills the entire inner area (becomes the frame rails).
+            canvas.draw_rect(frame.inner_rect().to_skia(dpi), &main_paint);
+            // Alt color fills only the rules text area (between type rail and bottom rail).
+            let fill_top = frame.type_bar.y + frame.type_bar.h;
+            let fill_bot = frame.rules_box.y + frame.rules_box.h + 0.5;
+            let fill_rect = MmRect::new(frame.art_box.x, fill_top, frame.art_box.w, (fill_bot - fill_top).max(0.0));
+            canvas.draw_rect(fill_rect.to_skia(dpi), &alt_paint);
+            // Texture over all rail areas — real image when available, noise fallback.
+            draw_classic_rail_texture(
+                canvas, &frame, dpi,
+                opts.rails_dir.as_deref(),
+                &card.name,
+            );
+        }
+    }
 
     // 4. Art (covers the middle band between title and alt area).
     let art_rect_px = frame.art_box.to_skia(dpi);
@@ -85,6 +153,54 @@ pub fn render_png(
         placeholder.set_anti_alias(true);
         placeholder.set_color4f(Color4f::new(0.12, 0.12, 0.13, 1.0), None);
         canvas.draw_rect(art_rect_px, &placeholder);
+    }
+
+    // 4b. Short shadow cast onto the frame areas just outside the art edges.
+    {
+        let shadow_h = mm_to_px(1.0, dpi);
+        let alpha = 47u8;
+        let dark  = Color::from_argb(alpha, 0, 0, 0);
+        let clear = Color::from_argb(0, 0, 0, 0);
+
+        // Above art: transparent at top → dark at art edge.
+        let top_y = art_rect_px.top - shadow_h;
+        if let Some(shader) = gradient_shader::linear(
+            ((art_rect_px.left, top_y), (art_rect_px.left, art_rect_px.top)),
+            skia_safe::gradient_shader::GradientShaderColors::Colors(&[clear, dark]),
+            None, TileMode::Clamp, None, None,
+        ) {
+            let mut sp = Paint::default();
+            sp.set_anti_alias(true);
+            sp.set_shader(shader);
+            canvas.draw_rect(
+                skia_safe::Rect::from_xywh(art_rect_px.left, top_y, art_rect_px.width(), shadow_h),
+                &sp,
+            );
+        }
+        // Below art: dark at art edge → transparent.
+        if let Some(shader) = gradient_shader::linear(
+            ((art_rect_px.left, art_rect_px.bottom), (art_rect_px.left, art_rect_px.bottom + shadow_h)),
+            skia_safe::gradient_shader::GradientShaderColors::Colors(&[dark, clear]),
+            None, TileMode::Clamp, None, None,
+        ) {
+            let mut sp = Paint::default();
+            sp.set_anti_alias(true);
+            sp.set_shader(shader);
+            canvas.draw_rect(
+                skia_safe::Rect::from_xywh(art_rect_px.left, art_rect_px.bottom, art_rect_px.width(), shadow_h),
+                &sp,
+            );
+        }
+    }
+
+    // 4c. Classic only: thin black inner border around the art box.
+    if frame.card_style == CardStyle::Classic {
+        let mut border_paint = Paint::default();
+        border_paint.set_anti_alias(true);
+        border_paint.set_color(Color::BLACK);
+        border_paint.set_style(paint::Style::Stroke);
+        border_paint.set_stroke_width(mm_to_px(0.25, dpi));
+        canvas.draw_rect(frame.art_box.to_skia(dpi), &border_paint);
     }
 
     // 5. Mana cost — drawn in title bar with a white disc behind each symbol
@@ -98,57 +214,100 @@ pub fn render_png(
         None
     };
 
-    // 6. Title text — alt color on the main-color title bar, Windsor Roman.
-    // Shifted halfway up (valign_frac=0.30) and halfway in toward the left
-    // edge (1.25 mm pad). Mana cost is priority: leave a 3 mm gap and let
-    // the title compress horizontally (scale_x) to fit.
+    // 6. Title text — white on the main-color title bar, with a black drop shadow
+    // (no blur, shifted 0.35 mm down-right). Windsor Roman.
     let title_padded = pad_horizontal(frame.title_bar, 1.25).to_skia(dpi);
     let title_fit_w = match mana_left_px {
         Some(left_px) => (left_px - title_padded.left - mm_to_px(3.0, dpi)).max(0.0),
         None => title_padded.width(),
     };
-    let alt_color_int = color4f_to_color(frame.alt_color());
-    draw_in_rect(
-        canvas,
-        &fonts.roman,
-        &card.name,
-        title_padded,
-        TextStyle::new(mm_to_px(3.84, dpi))
-            .with_color(alt_color_int)
-            .with_halign(HAlign::Left)
-            .with_fit(title_fit_w)
-            .with_valign_frac(0.30),
+    let title_shadow_off = mm_to_px(0.175, dpi);
+    let title_style = |color: Color| TextStyle::new(mm_to_px(3.84, dpi))
+        .with_color(color)
+        .with_halign(HAlign::Left)
+        .with_fit(title_fit_w)
+        .with_valign_frac(0.50);
+    let title_shadow_rect = skia_safe::Rect::new(
+        title_padded.left + title_shadow_off, title_padded.top + title_shadow_off,
+        title_padded.right + title_shadow_off, title_padded.bottom + title_shadow_off,
     );
+    draw_in_rect(canvas, &fonts.roman, &card.name, title_shadow_rect, title_style(Color::BLACK));
+    draw_in_rect(canvas, &fonts.roman, &card.name, title_padded,      title_style(color4f_to_color(frame.title_alt_color())));
 
-    // 7. Type line — main color, Windsor Demi, old "Summon X" naming. No
-    // extra horizontal padding so it shares the left edge of the body text.
+    // 7. Type line — Windsor Demi, old "Summon X" naming.
+    // 7. Type line — all right-side elements (set symbol + stamp) are anchored
+    // to the nominal height of the type text: cap-height top to baseline.
     let type_text = card.old_type_line();
     let type_padded = frame.type_bar.to_skia(dpi);
-    let set_symbol_w_mm = 4.5;
-    let set_symbol_right_pad_mm = 1.0;
-    let type_fit_w = (type_padded.width()
-        - mm_to_px(set_symbol_w_mm + set_symbol_right_pad_mm + 1.0, dpi))
-        .max(0.0);
-    let main_color_int = color4f_to_color(frame.main_color());
-    draw_in_rect(
-        canvas,
-        &fonts.demi,
-        &type_text,
-        type_padded,
-        TextStyle::new(mm_to_px(3.6, dpi))
-            .with_color(main_color_int)
-            .with_halign(HAlign::Left)
-            .with_fit(type_fit_w),
-    );
+    let (type_font_size_px, set_symbol_color) = match frame.card_style {
+        CardStyle::Basic   => (mm_to_px(2.52, dpi), frame.main_color()),
+        CardStyle::Classic => (mm_to_px(3.0,  dpi), frame.alt_color()),
+    };
 
-    // 8. Set symbol placeholder on the right of the type-line band.
-    draw_set_symbol_placeholder(
-        canvas,
-        type_padded,
-        mm_to_px(set_symbol_w_mm, dpi),
-        mm_to_px(set_symbol_right_pad_mm, dpi),
-        frame.main_color(),
-    );
+    // Compute where draw_in_rect will place the baseline (valign_frac = 0.5 default).
+    let type_font_obj = Font::from_typeface(fonts.demi.clone(), type_font_size_px);
+    let (_, type_metrics) = type_font_obj.metrics();
+    let type_text_h = -type_metrics.ascent + type_metrics.descent;
+    let type_baseline_y = type_padded.top
+        + (type_padded.height() - type_text_h) * 0.5
+        - type_metrics.ascent;
+    // Nominal height: baseline to cap-height top (fall back to ascent if cap_height absent).
+    let cap_h = if type_metrics.cap_height > 0.0 { type_metrics.cap_height } else { -type_metrics.ascent };
+    let nom_top = type_baseline_y - cap_h;
+    let nom_bot = type_baseline_y;
+    let nom_cy  = (nom_top + nom_bot) * 0.5;
+    let nom_h   = nom_bot - nom_top;
+
+    // Right-side sizing. Both scales are relative to nom_h (1.0 = nominal type height).
+    const SET_SYMBOL_SCALE: f32 = 2.0;
+    const STAMP_SCALE: f32      = 1.5;
+    let set_info_gap_mm = 0.5;
+    let symbol_size_px  = nom_h * SET_SYMBOL_SCALE;
+    // Right edge of set symbol flush with right edge of type bar.
+    let sym_cx          = type_padded.right - symbol_size_px * 0.5;
+    let right_pad_px    = 0.0_f32;
+    let info_right      = sym_cx - symbol_size_px * 0.5 - mm_to_px(set_info_gap_mm, dpi);
+
+    // Reserve room for right-side block when fitting type text width.
+    let right_reserve_px = type_padded.right - info_right;
+    let type_fit_w = (type_padded.width() - right_reserve_px).max(0.0);
+
+    match frame.card_style {
+        CardStyle::Basic => {
+            draw_in_rect(canvas, &fonts.demi, &type_text, type_padded,
+                TextStyle::new(type_font_size_px)
+                    .with_color(color4f_to_color(frame.main_color()))
+                    .with_halign(HAlign::Left)
+                    .with_fit(type_fit_w));
+        }
+        CardStyle::Classic => {
+            draw_in_rect(canvas, &fonts.demi, &type_text, type_padded,
+                TextStyle::new(type_font_size_px)
+                    .with_color(color4f_to_color(frame.alt_color()))
+                    .with_halign(HAlign::Left)
+                    .with_fit(type_fit_w));
+        }
+    }
+
+    // 8. Set symbol centered on nom_cy, sized by SET_SYMBOL_SCALE.
+    draw_set_symbol(canvas, fonts.symbols2.as_ref(), type_padded, symbol_size_px, right_pad_px, nom_cy, set_symbol_color);
+
+    // 8b. Stamp: two lines centered on nom_cy, each nom_h * STAMP_SCALE / 2 tall.
+    let info_left = type_padded.left;
+    let stamp_line_h = nom_h * STAMP_SCALE * 0.5;
+    let set_info_color = color4f_to_color(frame.alt2_color());
+    let set_info_style = |color: Color| TextStyle::new(stamp_line_h * 0.82)
+        .with_color(color)
+        .with_halign(HAlign::Right)
+        .with_valign_frac(0.50);
+    if let Some(set_code) = &card.set_code {
+        let top_rect = skia_safe::Rect::new(info_left, nom_cy - stamp_line_h, info_right, nom_cy);
+        draw_in_rect(canvas, &fonts.demi, &set_code.to_uppercase(), top_rect, set_info_style(set_info_color));
+    }
+    if let Some(num) = &card.collector_number {
+        let bot_rect = skia_safe::Rect::new(info_left, nom_cy, info_right, nom_cy + stamp_line_h);
+        draw_in_rect(canvas, &fonts.demi, num, bot_rect, set_info_style(set_info_color));
+    }
 
     // 9. Rules text + flavor text. Both are black on the alt-color
     // background; flavor uses Windsor Light Condensed BT with a fake-italic
@@ -158,8 +317,13 @@ pub fn render_png(
     let flavor = card.flavor_text.as_deref().filter(|s| !s.trim().is_empty());
     let (oracle_rect, flavor_rect) = match (oracle.is_some(), flavor.is_some()) {
         (true, true) => {
-            let split = rules_rect_px.top + rules_rect_px.height() * 0.60;
+            // Split proportionally to character count so oracle-heavy cards
+            // (e.g. Leviathan) don't overflow into the flavor or P/T area.
+            let o_chars = oracle.map_or(1, |s| s.chars().count()) as f32;
+            let f_chars = flavor.map_or(1, |s| s.chars().count()) as f32;
+            let oracle_frac = (o_chars / (o_chars + f_chars)).clamp(0.45, 0.78);
             let gap = mm_to_px(0.8, dpi);
+            let split = rules_rect_px.top + rules_rect_px.height() * oracle_frac;
             (
                 Some(skia_safe::Rect::new(
                     rules_rect_px.left,
@@ -184,40 +348,77 @@ pub fn render_png(
         draw_rules(
             canvas,
             &fonts.light,
-            None,
+            symbol_cache.as_mut(),
             oracle,
             rect,
-            /* base */ mm_to_px(3.0, dpi),
-            /* min  */ mm_to_px(2.0, dpi),
-            /* skew */ 0.0,
+            /* base  */ mm_to_px(3.0, dpi),
+            /* min   */ mm_to_px(1.7, dpi),
+            /* skew  */ 0.0,
+            /* color */ Color::BLACK,
         );
     }
     if let (Some(flavor), Some(rect)) = (flavor, flavor_rect) {
+        // Flavor text: midpoint between black and alt_color.
+        let a = frame.alt_color();
+        let flavor_color = color4f_to_color(Color4f::new(a.r * 0.7, a.g * 0.7, a.b * 0.7, 1.0));
         draw_rules(
             canvas,
             &fonts.flavor,
             None,
             flavor,
             rect,
-            /* base */ mm_to_px(2.6, dpi),
-            /* min  */ mm_to_px(1.7, dpi),
-            /* skew */ -0.18,
+            /* base  */ mm_to_px(2.6, dpi),
+            /* min   */ mm_to_px(1.4, dpi),
+            /* skew  */ -0.18,
+            /* color */ flavor_color,
         );
     }
 
-    // 10. P/T — large black Windsor Roman, no tab background.
+    // 10. P/T — Windsor Roman, no tab background.
+    // Basic: large black text, bottom-right of inner area.
+    // Classic: smaller alt_color text, vertically centred in the bottom rail (pt_box).
     if let (Some(p), Some(t)) = (&card.power, &card.toughness) {
         let pt_text = format!("{p} / {t}");
-        let pt_rect_px = frame.pt_box.to_skia(dpi);
-        draw_in_rect(
-            canvas,
-            &fonts.roman,
-            &pt_text,
-            pt_rect_px,
-            TextStyle::new(mm_to_px(6.0, dpi))
-                .with_color(Color::BLACK)
-                .with_halign(HAlign::Right),
-        );
+        let (pt_size_px, pt_color) = match frame.card_style {
+            CardStyle::Basic   => (mm_to_px(6.0, dpi), color4f_to_color(Color4f::new(0.0, 0.0, 0.0, 1.0))),
+            CardStyle::Classic => (mm_to_px(4.5, dpi), color4f_to_color(frame.alt_color())),
+        };
+        let mut pt_font = skia_safe::Font::from_typeface(fonts.roman.clone(), pt_size_px);
+        pt_font.set_subpixel(true);
+        let (_, ink) = pt_font.measure_str(&pt_text, None);
+        let mut pt_paint = Paint::default();
+        pt_paint.set_anti_alias(true);
+        pt_paint.set_color(pt_color);
+        match frame.card_style {
+            CardStyle::Basic => {
+                let pad_px = mm_to_px(0.5, dpi);
+                let inner_right_px  = mm_to_px(CARD_WIDTH_MM - frame.border_mm, dpi);
+                let inner_bottom_px = mm_to_px(CARD_HEIGHT_MM - frame.border_mm, dpi);
+                let baseline_y = inner_bottom_px - pad_px;
+                let x = inner_right_px - pad_px - ink.right;
+                canvas.draw_str(&pt_text, (x, baseline_y), &pt_font, &pt_paint);
+            }
+            CardStyle::Classic => {
+                // Centre in pt_box both horizontally and vertically.
+                let pt_box_px = frame.pt_box.to_skia(dpi);
+                let cx = pt_box_px.left + pt_box_px.width() * 0.5;
+                let cy = pt_box_px.top  + pt_box_px.height() * 0.5;
+                let x = cx - (ink.left + ink.right) * 0.5;
+                let baseline_y = cy - (ink.top + ink.bottom) * 0.5;
+                canvas.draw_str(&pt_text, (x, baseline_y), &pt_font, &pt_paint);
+            }
+        }
+    }
+
+    // 11. Bottom-left info stamp: "SET  NUM | version" in Google Code Sans,
+    // inside a thin-bordered box. Basic only — classic has no stamp.
+    if frame.card_style == CardStyle::Basic {
+        if let Some(version) = &opts.stamp_version {
+            let set_str = card.set_code.as_deref().unwrap_or("???").to_uppercase();
+            let num_str = card.collector_number.as_deref().unwrap_or("?");
+            let stamp = format!("{set_str}  {num_str} | {version}");
+            draw_stamp(canvas, &fonts.code, &stamp, dpi, &frame);
+        }
     }
 
     // Encode PNG.
@@ -241,7 +442,7 @@ fn draw_mana_cost(
         return None;
     }
 
-    let symbol_size_mm = 4.4;
+    let symbol_size_mm = 3.2; // 73% of original 4.4
     let gap_mm = 0.4;
     let right_pad_mm = 1.5;
 
@@ -252,26 +453,50 @@ fn draw_mana_cost(
     let bar = frame.title_bar.to_skia(dpi);
     let total_w = tokens.len() as f32 * symbol_size_px
         + (tokens.len() as f32 - 1.0).max(0.0) * gap_px;
-    let start_x = bar.right - right_pad_px - total_w;
+    let start_x = match frame.card_style {
+        // Basic: right-align the mana row inside the title bar.
+        CardStyle::Basic => bar.right - right_pad_px - total_w,
+        // Classic: centre the rightmost symbol on the art box right edge.
+        CardStyle::Classic => {
+            let art_right_px = (frame.art_box.x + frame.art_box.w) * dpi.px_per_mm();
+            art_right_px - total_w + symbol_size_px * 0.5
+        }
+    };
     let y = bar.top + (bar.height() - symbol_size_px) * 0.5;
 
-    let mut paint = Paint::default();
-    paint.set_anti_alias(true);
-    let mut white_bg = Paint::default();
-    white_bg.set_anti_alias(true);
-    white_bg.set_color(Color::WHITE);
+    // Blurred paint for the outer edge pass.
+    let mut blur_paint = Paint::default();
+    blur_paint.set_anti_alias(true);
+    if let Some(blur) = image_filters::blur((1.0, 1.0), TileMode::Decal, None, None) {
+        blur_paint.set_image_filter(blur);
+    }
+    // Sharp paint for the interior overdraw.
+    let mut sharp_paint = Paint::default();
+    sharp_paint.set_anti_alias(true);
+
+    // How many px inset from the pip circle edge to start the sharp overdraw.
+    // Scryfall pips fill r=50 in a 100x100 viewBox, so circle r in dst = symbol_size_px/2.
+    let edge_blur_px = 1.5_f32;
 
     let mut x = start_x;
     for token in &tokens {
-        let cx = x + symbol_size_px * 0.5;
-        let cy = y + symbol_size_px * 0.5;
-        // White disc behind the symbol, slightly larger than the symbol so
-        // the colored glyph reads clearly on the dark title bar.
-        canvas.draw_circle((cx, cy), symbol_size_px * 0.5, &white_bg);
         match cache.rasterize(token, symbol_size_px) {
             Ok(image) => {
                 let dst = skia_safe::Rect::from_xywh(x, y, symbol_size_px, symbol_size_px);
-                canvas.draw_image_rect(&image, None, dst, &paint);
+
+                // Pass 1: full image blurred — gives soft antialiased edge.
+                canvas.draw_image_rect(&image, None, dst, &blur_paint);
+
+                // Pass 2: sharp image clipped to inset circle — restores interior detail.
+                let cx = dst.left + dst.width()  * 0.5;
+                let cy = dst.top  + dst.height() * 0.5;
+                let clip_r = dst.width() * 0.5 - edge_blur_px;
+                let mut clip_path = SkPath::new();
+                clip_path.add_circle((cx, cy), clip_r, None);
+                canvas.save();
+                canvas.clip_path(&clip_path, skia_safe::ClipOp::Intersect, true);
+                canvas.draw_image_rect(&image, None, dst, &sharp_paint);
+                canvas.restore();
             }
             Err(e) => eprintln!("warning: skipping mana symbol {{{token}}}: {e}"),
         }
@@ -281,34 +506,96 @@ fn draw_mana_cost(
     Some(start_x)
 }
 
-fn draw_set_symbol_placeholder(
+fn draw_stamp(
     canvas: &skia_safe::Canvas,
+    typeface: &skia_safe::Typeface,
+    text: &str,
+    dpi: Dpi,
+    frame: &FrameSpec,
+) {
+    let font_size = mm_to_px(1.0, dpi);
+    let mut font = Font::from_typeface(typeface.clone(), font_size);
+    font.set_subpixel(true);
+
+    let (text_w, bounds) = font.measure_str(text, None);
+    let ink_h = bounds.height();
+
+    // Box is flush with the inner border edges — the card border IS the box border.
+    let inner_left   = mm_to_px(frame.border_mm, dpi);
+    let inner_bottom = mm_to_px(CARD_HEIGHT_MM - frame.border_mm, dpi);
+
+    let box_pad_h = mm_to_px(0.35, dpi);
+    let box_pad_v = mm_to_px(0.25, dpi);
+
+    let box_left   = inner_left - 1.0;
+    let box_bottom = inner_bottom + 1.0;
+    let box_top    = box_bottom - ink_h - box_pad_v * 2.0;
+    let box_right  = box_left + text_w + box_pad_h * 2.0;
+
+    let text_x     = box_left + box_pad_h - bounds.left;
+    let baseline_y = box_bottom - box_pad_v - bounds.bottom;
+
+    // Thin black border (no fill — stamp is transparent so the card border shows through).
+    let mut stroke = Paint::default();
+    stroke.set_anti_alias(true);
+    stroke.set_color(Color::BLACK);
+    stroke.set_style(paint::Style::Stroke);
+    stroke.set_stroke_width(mm_to_px(0.12, dpi));
+    canvas.draw_rect(skia_safe::Rect::new(box_left, box_top, box_right, box_bottom), &stroke);
+
+    // Text.
+    let mut text_paint = Paint::default();
+    text_paint.set_anti_alias(true);
+    text_paint.set_color(Color::BLACK);
+    canvas.draw_str(text, (text_x, baseline_y), &font, &text_paint);
+}
+
+/// Draw the set symbol glyph (♣ from Noto Sans Symbols 2) right-aligned in
+/// the type bar.  Falls back to the white diamond outline if the font is
+/// unavailable.
+fn draw_set_symbol(
+    canvas: &skia_safe::Canvas,
+    typeface: Option<&skia_safe::Typeface>,
     type_bar_px: skia_safe::Rect,
     size_px: f32,
     right_pad_px: f32,
-    outline: Color4f,
+    center_y: f32,
+    color: Color4f,
 ) {
     let cx = type_bar_px.right - right_pad_px - size_px * 0.5;
-    let cy = type_bar_px.top + type_bar_px.height() * 0.5;
-    let r = size_px * 0.5;
+    let cy = center_y;
 
-    let mut path = SkPath::new();
-    path.move_to((cx, cy - r));
-    path.line_to((cx + r, cy));
-    path.line_to((cx, cy + r));
-    path.line_to((cx - r, cy));
-    path.close();
+    if let Some(tf) = typeface {
+        const SYMBOL: &str = "🫐";
+        let mut font = Font::from_typeface(tf.clone(), size_px * 0.90);
+        font.set_subpixel(true);
+        let (_, ink) = font.measure_str(SYMBOL, None);
+        let x = cx - (ink.left + ink.right) * 0.5;
+        let baseline_y = cy - (ink.top + ink.bottom) * 0.5;
+        let mut paint = Paint::new(color, None);
+        paint.set_anti_alias(true);
+        canvas.draw_str(SYMBOL, (x, baseline_y), &font, &paint);
+    } else {
+        // Diamond fallback when Noto Sans Symbols 2 isn't available.
+        let r = size_px * 0.5;
+        let mut path = SkPath::new();
+        path.move_to((cx, cy - r));
+        path.line_to((cx + r, cy));
+        path.line_to((cx, cy + r));
+        path.line_to((cx - r, cy));
+        path.close();
 
-    let mut fill = Paint::default();
-    fill.set_anti_alias(true);
-    fill.set_color(Color::WHITE);
-    canvas.draw_path(&path, &fill);
+        let mut fill = Paint::default();
+        fill.set_anti_alias(true);
+        fill.set_color(Color::WHITE);
+        canvas.draw_path(&path, &fill);
 
-    let mut stroke = Paint::new(outline, None);
-    stroke.set_anti_alias(true);
-    stroke.set_style(skia_safe::paint::Style::Stroke);
-    stroke.set_stroke_width(size_px * 0.06);
-    canvas.draw_path(&path, &stroke);
+        let mut stroke = Paint::new(color, None);
+        stroke.set_anti_alias(true);
+        stroke.set_style(skia_safe::paint::Style::Stroke);
+        stroke.set_stroke_width(size_px * 0.06);
+        canvas.draw_path(&path, &stroke);
+    }
 }
 
 fn draw_art(
@@ -323,6 +610,217 @@ fn draw_art(
     paint.set_anti_alias(true);
     canvas.draw_image_rect(&image, None, dst, &paint);
     Ok(())
+}
+
+/// Textures all classic rail areas (title bar, side rails, type rail, bottom rail).
+///
+/// Prefers real-material images from `rails_dir` (e.g. `red-c.png`, `red-g.jpeg`).
+/// Falls back to procedural Perlin noise when no images are available.
+///
+/// Image mode: all rails are sampled from the *same* texture crop so they look
+/// continuous.  The texture is scaled to cover the inner card area (scale-to-cover)
+/// and a random crop offset is chosen deterministically from `card_name`.
+fn draw_classic_rail_texture(
+    canvas: &skia_safe::Canvas,
+    frame: &FrameSpec,
+    dpi: Dpi,
+    rails_dir: Option<&std::path::Path>,
+    card_name: &str,
+) {
+    use crate::scryfall::FrameColor;
+
+    // ── Rail rects (shared by both branches) ─────────────────────────────────
+    let border   = frame.border_mm;
+    let inner_w  = CARD_WIDTH_MM - 2.0 * border;
+    let side_w   = frame.frame_rail_mm;
+
+    // Side rails run from the art box top all the way down to the bottom rail,
+    // so they flank both the art and the rules text area.
+    let side_top = frame.art_box.y;
+    let side_bot = frame.rules_box.y + frame.rules_box.h + 0.5; // top of bottom rail
+    let side_h   = (side_bot - side_top).max(0.0);
+
+    let bot_y = frame.rules_box.y + frame.rules_box.h + 0.5;
+    let bot_h  = (CARD_HEIGHT_MM - border - bot_y).max(0.0);
+
+    let rail_rects: [skia_safe::Rect; 5] = [
+        // Title bar
+        frame.title_bar.to_skia(dpi),
+        // Left side rail — spans art AND rules area
+        MmRect::new(border, side_top, side_w, side_h).to_skia(dpi),
+        // Right side rail — spans art AND rules area
+        MmRect::new(frame.art_box.x + frame.art_box.w, side_top, side_w, side_h).to_skia(dpi),
+        // Type rail (full inner width)
+        MmRect::new(border, frame.type_bar.y, inner_w, frame.type_bar.h).to_skia(dpi),
+        // Bottom rail
+        MmRect::new(border, bot_y, inner_w, bot_h).to_skia(dpi),
+    ];
+
+    // ── Try image-based textures ──────────────────────────────────────────────
+    if let Some(dir) = rails_dir {
+        if let Some(image) = load_rail_image_for_color(dir, frame.frame_color, card_name) {
+            let inner_px = frame.inner_rect().to_skia(dpi);
+            draw_rails_from_image(canvas, &image, &rail_rects, inner_px, card_name);
+            return;
+        }
+    }
+
+    // ── Perlin noise fallback ─────────────────────────────────────────────────
+    let ppm = dpi.px_per_mm();
+
+    let (turb, fx, fy, oct, low, high): (bool, f32, f32, usize, [f32; 3], [f32; 3]) =
+        match frame.frame_color {
+            FrameColor::White               => (false, 0.06, 0.06, 2,
+                [0.700, 0.670, 0.590], [0.960, 0.945, 0.890]),
+            FrameColor::Blue                => (false, 0.09, 0.09, 3,
+                [0.020, 0.080, 0.270], [0.160, 0.510, 0.760]),
+            FrameColor::Black               => (true,  0.55, 0.55, 6,
+                [0.070, 0.055, 0.050], [0.330, 0.280, 0.260]),
+            FrameColor::Red                 => (true,  0.40, 0.40, 5,
+                [0.440, 0.045, 0.045], [0.910, 0.230, 0.160]),
+            FrameColor::Green               => (false, 0.14, 0.58, 4,
+                [0.000, 0.210, 0.090], [0.130, 0.590, 0.320]),
+            FrameColor::Gold                => (false, 0.16, 0.16, 3,
+                [0.520, 0.330, 0.015], [0.890, 0.710, 0.350]),
+            FrameColor::Colorless
+            | FrameColor::Artifact          => (true,  0.75, 0.75, 2,
+                [0.390, 0.365, 0.345], [0.760, 0.730, 0.705]),
+            FrameColor::Land                => (false, 0.05, 0.05, 2,
+                [0.560, 0.510, 0.480], [0.780, 0.740, 0.710]),
+        };
+
+    let shader = if turb {
+        skia_shaders::turbulence((fx / ppm, fy / ppm), oct, 0.0, None)
+    } else {
+        skia_shaders::fractal_noise((fx / ppm, fy / ppm), oct, 0.0, None)
+    };
+    let shader = match shader { Some(s) => s, None => return };
+
+    let cf_arr: [f32; 20] = [
+        high[0] - low[0], 0.0, 0.0, 0.0, low[0],
+        high[1] - low[1], 0.0, 0.0, 0.0, low[1],
+        high[2] - low[2], 0.0, 0.0, 0.0, low[2],
+        0.0,              0.0, 0.0, 1.0, 0.0,
+    ];
+    let cf = color_filters::matrix_row_major(&cf_arr, None);
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_shader(shader);
+    paint.set_color_filter(cf);
+    paint.set_blend_mode(BlendMode::SoftLight);
+
+    for r in &rail_rects {
+        canvas.draw_rect(*r, &paint);
+    }
+}
+
+/// Returns a colour name string for the given `FrameColor`, used to match
+/// texture filenames (`red-c.png`, `blue-g.jpeg`, …).
+fn frame_color_name(c: crate::scryfall::FrameColor) -> &'static str {
+    use crate::scryfall::FrameColor::*;
+    match c {
+        White => "white", Blue => "blue", Black => "black",
+        Red => "red", Green => "green", Gold => "gold",
+        Colorless => "colorless", Artifact => "artifact", Land => "land",
+    }
+}
+
+/// Scans `rails_dir` for files matching `{color}-*.{png,jpg,jpeg}`, picks one
+/// deterministically based on `card_name`, loads it and returns the decoded image.
+fn load_rail_image_for_color(
+    rails_dir: &std::path::Path,
+    color: crate::scryfall::FrameColor,
+    card_name: &str,
+) -> Option<Image> {
+    let prefix = format!("{}-", frame_color_name(color));
+
+    let mut candidates: Vec<std::path::PathBuf> = std::fs::read_dir(rails_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            name.starts_with(&prefix)
+                && (name.ends_with(".png") || name.ends_with(".jpg") || name.ends_with(".jpeg"))
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates.sort(); // deterministic order
+
+    // Pick one based on a hash of the card name.
+    let idx = (name_hash(card_name) as usize) % candidates.len();
+    let path = &candidates[idx];
+
+    let bytes = std::fs::read(path).ok()?;
+    let data = Data::new_copy(&bytes);
+    Image::from_encoded(data)
+}
+
+/// Draws the texture image over every rail rect.  All rects sample from the
+/// same continuous region of the image so adjacent rails look seamless.
+///
+/// The mapping is: the inner card area (pixel space) corresponds to a
+/// scale-to-cover crop of the texture, with a random x offset chosen from
+/// the available slack.  The random offset is derived from `card_name` so
+/// every card gets a unique but reproducible crop.
+fn draw_rails_from_image(
+    canvas: &skia_safe::Canvas,
+    image: &Image,
+    rail_rects: &[skia_safe::Rect],
+    inner_card_px: skia_safe::Rect,
+    card_name: &str,
+) {
+    use skia_safe::canvas::SrcRectConstraint;
+
+    let tex_w = image.width()  as f32;
+    let tex_h = image.height() as f32;
+    let card_w = inner_card_px.width();
+    let card_h = inner_card_px.height();
+
+    // scale-to-cover: number of texture pixels consumed per canvas pixel.
+    // Take the minimum so the texture fills the shorter card dimension exactly
+    // and has slack in the other (from which we take a random crop).
+    let scale = (tex_w / card_w).min(tex_h / card_h);
+
+    // Available slack in each axis (in texture pixels).
+    let slack_x = (tex_w - card_w * scale).max(0.0);
+    let slack_y = (tex_h - card_h * scale).max(0.0);
+
+    // Deterministic random offsets within the available slack.
+    let h = name_hash(card_name);
+    let off_x = (h         & 0xFFFF) as f32 / 65535.0 * slack_x;
+    let off_y = ((h >> 16) & 0xFFFF) as f32 / 65535.0 * slack_y;
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    // Normal blend: texture directly replaces the solid base fill in rail areas.
+
+    for &dst in rail_rects {
+        // Map each rail's canvas position → texture source rect.
+        let rel_x = dst.left - inner_card_px.left;
+        let rel_y = dst.top  - inner_card_px.top;
+        let src = skia_safe::Rect::from_xywh(
+            off_x + rel_x * scale,
+            off_y + rel_y * scale,
+            dst.width()  * scale,
+            dst.height() * scale,
+        );
+        canvas.draw_image_rect(image, Some((&src, SrcRectConstraint::Fast)), dst, &paint);
+    }
+}
+
+/// Deterministic hash of a string, used to pick a reproducible-but-varied
+/// texture crop for each card.
+fn name_hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    use std::collections::hash_map::DefaultHasher;
+    let mut h = DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
 }
 
 fn pad_horizontal(r: MmRect, pad_mm: f32) -> MmRect {
@@ -340,4 +838,17 @@ fn color4f_to_color(c: Color4f) -> Color {
         (c.g * 255.0).round().clamp(0.0, 255.0) as u8,
         (c.b * 255.0).round().clamp(0.0, 255.0) as u8,
     )
+}
+
+fn dual_letter_color(letter: &str) -> Color4f {
+    use crate::scryfall::FrameColor;
+    let fc = match letter {
+        "W" => FrameColor::White,
+        "U" => FrameColor::Blue,
+        "B" => FrameColor::Black,
+        "R" => FrameColor::Red,
+        "G" => FrameColor::Green,
+        _   => FrameColor::Colorless,
+    };
+    FrameSpec::basic(fc).main_color()
 }
