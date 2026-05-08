@@ -36,8 +36,6 @@ pub struct RenderOptions {
     /// Directory of rail texture images (e.g. `_meta/rails/red-c.png`).
     /// When present, classic frames sample real-material images instead of noise.
     pub rails_dir: Option<PathBuf>,
-    /// If Some, draw a bottom-left info stamp: "<SET>  <NUM> | <version>".
-    pub stamp_version: Option<String>,
     pub card_style: CardStyle,
 }
 
@@ -48,7 +46,6 @@ impl Default for RenderOptions {
             fonts_dir: None,
             symbols_dir: None,
             rails_dir: None,
-            stamp_version: None,
             card_style: CardStyle::Basic,
         }
     }
@@ -285,7 +282,7 @@ pub fn render_png(
     };
 
     // Compute where draw_in_rect will place the baseline (valign_frac = 0.5 default).
-    let type_font_obj = Font::from_typeface(fonts.demi.clone(), type_font_size_px);
+    let type_font_obj = Font::from_typeface(fonts.roman.clone(), type_font_size_px);
     let (_, type_metrics) = type_font_obj.metrics();
     let type_text_h = -type_metrics.ascent + type_metrics.descent;
     let type_baseline_y = type_padded.top
@@ -314,14 +311,14 @@ pub fn render_png(
 
     match frame.card_style {
         CardStyle::Basic => {
-            draw_in_rect(canvas, &fonts.demi, &type_text, type_padded,
+            draw_in_rect(canvas, &fonts.roman, &type_text, type_padded,
                 TextStyle::new(type_font_size_px)
                     .with_color(color4f_to_color(frame.main_color()))
                     .with_halign(HAlign::Left)
                     .with_fit(type_fit_w));
         }
         CardStyle::Classic => {
-            draw_in_rect(canvas, &fonts.demi, &type_text, type_padded,
+            draw_in_rect(canvas, &fonts.roman, &type_text, type_padded,
                 TextStyle::new(type_font_size_px)
                     .with_color(color4f_to_color(frame.alt_color()))
                     .with_halign(HAlign::Left)
@@ -332,21 +329,22 @@ pub fn render_png(
     // 8. Set symbol centered on nom_cy, sized by SET_SYMBOL_SCALE.
     draw_set_symbol(canvas, fonts.symbols2.as_ref(), type_padded, symbol_size_px, right_pad_px, nom_cy, set_symbol_color);
 
-    // 8b. Stamp: two lines centered on nom_cy — Basic style only.
+    // 8b. Stamp: two lines centered on nom_cy — Basic style only, monospaced.
     if frame.card_style == CardStyle::Basic {
         let stamp_line_h = nom_h * STAMP_SCALE * 0.5;
+        let stamp_size_px = stamp_line_h * 0.82;
         let set_info_color = color4f_to_color(frame.alt2_color());
-        let set_info_style = |color: Color| TextStyle::new(stamp_line_h * 0.82)
-            .with_color(color)
-            .with_halign(HAlign::Right)
-            .with_valign_frac(0.50);
+        let stamp_font = Font::from_typeface(fonts.roman.clone(), stamp_size_px);
+        let (_, sm) = stamp_font.metrics();
+        let text_h = -sm.ascent + sm.descent;
+        let baseline_for = |rect_top: f32| rect_top + (stamp_line_h - text_h) * 0.5 - sm.ascent;
         if let Some(set_code) = &card.set_code {
-            let top_rect = skia_safe::Rect::new(info_right - type_padded.width(), nom_cy - stamp_line_h, info_right, nom_cy);
-            draw_in_rect(canvas, &fonts.demi, &set_code.to_uppercase(), top_rect, set_info_style(set_info_color));
+            draw_mono_stamp(canvas, &stamp_font, &set_code.to_uppercase(),
+                info_right, baseline_for(nom_cy - stamp_line_h), set_info_color);
         }
         if let Some(num) = &card.collector_number {
-            let bot_rect = skia_safe::Rect::new(info_right - type_padded.width(), nom_cy, info_right, nom_cy + stamp_line_h);
-            draw_in_rect(canvas, &fonts.demi, num, bot_rect, set_info_style(set_info_color));
+            draw_mono_stamp(canvas, &stamp_font, num,
+                info_right, baseline_for(nom_cy), set_info_color);
         }
     }
 
@@ -354,7 +352,8 @@ pub fn render_png(
     // background; flavor uses Windsor Light Condensed BT with a fake-italic
     // skew (the face has no italic variant).
     let rules_rect_px = frame.rules_box.to_skia(dpi);
-    let oracle = card.oracle_text.as_deref().filter(|s| !s.trim().is_empty());
+    let oracle_owned = card.old_oracle_text();
+    let oracle = oracle_owned.as_deref().filter(|s| !s.trim().is_empty());
     let flavor = card.flavor_text.as_deref().filter(|s| !s.trim().is_empty());
     let (oracle_rect, flavor_rect) = match (oracle.is_some(), flavor.is_some()) {
         (true, true) => {
@@ -392,14 +391,14 @@ pub fn render_png(
             symbol_cache.as_mut(),
             oracle,
             rect,
-            /* base  */ mm_to_px(3.0, dpi),
-            /* min   */ mm_to_px(1.7, dpi),
-            /* skew  */ 0.0,
-            /* color */ Color::BLACK,
+            /* base   */ mm_to_px(3.0, dpi),
+            /* min    */ mm_to_px(1.7, dpi),
+            /* skew   */ 0.0,
+            /* color  */ Color::BLACK,
+            /* center */ Some(2),
         );
     }
     if let (Some(flavor), Some(rect)) = (flavor, flavor_rect) {
-        // Flavor text: midpoint between black and alt_color.
         let a = frame.alt_color();
         let flavor_color = color4f_to_color(Color4f::new(a.r * 0.7, a.g * 0.7, a.b * 0.7, 1.0));
         draw_rules(
@@ -408,10 +407,11 @@ pub fn render_png(
             None,
             flavor,
             rect,
-            /* base  */ mm_to_px(2.6, dpi),
-            /* min   */ mm_to_px(1.4, dpi),
-            /* skew  */ -0.18,
-            /* color */ flavor_color,
+            /* base   */ mm_to_px(2.6, dpi),
+            /* min    */ mm_to_px(1.4, dpi),
+            /* skew   */ -0.18,
+            /* color  */ flavor_color,
+            /* center */ Some(1),
         );
     }
 
@@ -448,17 +448,6 @@ pub fn render_png(
                 let baseline_y = cy - (ink.top + ink.bottom) * 0.5;
                 canvas.draw_str(&pt_text, (x, baseline_y), &pt_font, &pt_paint);
             }
-        }
-    }
-
-    // 11. Bottom-left info stamp: "SET  NUM | version" in Google Code Sans,
-    // inside a thin-bordered box. Basic only — classic has no stamp.
-    if frame.card_style == CardStyle::Basic {
-        if let Some(version) = &opts.stamp_version {
-            let set_str = card.set_code.as_deref().unwrap_or("???").to_uppercase();
-            let num_str = card.collector_number.as_deref().unwrap_or("?");
-            let stamp = format!("{set_str}  {num_str} | {version}");
-            draw_stamp(canvas, &fonts.code, &stamp, dpi, &frame);
         }
     }
 
@@ -547,49 +536,6 @@ fn draw_mana_cost(
     Some(start_x)
 }
 
-fn draw_stamp(
-    canvas: &skia_safe::Canvas,
-    typeface: &skia_safe::Typeface,
-    text: &str,
-    dpi: Dpi,
-    frame: &FrameSpec,
-) {
-    let font_size = mm_to_px(1.0, dpi);
-    let mut font = Font::from_typeface(typeface.clone(), font_size);
-    font.set_subpixel(true);
-
-    let (text_w, bounds) = font.measure_str(text, None);
-    let ink_h = bounds.height();
-
-    // Box is flush with the inner border edges — the card border IS the box border.
-    let inner_left   = mm_to_px(frame.border_mm, dpi);
-    let inner_bottom = mm_to_px(CARD_HEIGHT_MM - frame.border_mm, dpi);
-
-    let box_pad_h = mm_to_px(0.35, dpi);
-    let box_pad_v = mm_to_px(0.25, dpi);
-
-    let box_left   = inner_left - 1.0;
-    let box_bottom = inner_bottom + 1.0;
-    let box_top    = box_bottom - ink_h - box_pad_v * 2.0;
-    let box_right  = box_left + text_w + box_pad_h * 2.0;
-
-    let text_x     = box_left + box_pad_h - bounds.left;
-    let baseline_y = box_bottom - box_pad_v - bounds.bottom;
-
-    // Thin black border (no fill — stamp is transparent so the card border shows through).
-    let mut stroke = Paint::default();
-    stroke.set_anti_alias(true);
-    stroke.set_color(Color::BLACK);
-    stroke.set_style(paint::Style::Stroke);
-    stroke.set_stroke_width(mm_to_px(0.12, dpi));
-    canvas.draw_rect(skia_safe::Rect::new(box_left, box_top, box_right, box_bottom), &stroke);
-
-    // Text.
-    let mut text_paint = Paint::default();
-    text_paint.set_anti_alias(true);
-    text_paint.set_color(Color::BLACK);
-    canvas.draw_str(text, (text_x, baseline_y), &font, &text_paint);
-}
 
 /// Draw the set symbol glyph (♣ from Noto Sans Symbols 2) right-aligned in
 /// the type bar.  Falls back to the white diamond outline if the font is
@@ -879,6 +825,34 @@ fn color4f_to_color(c: Color4f) -> Color {
         (c.g * 255.0).round().clamp(0.0, 255.0) as u8,
         (c.b * 255.0).round().clamp(0.0, 255.0) as u8,
     )
+}
+
+fn draw_mono_stamp(
+    canvas: &skia_safe::Canvas,
+    font: &Font,
+    text: &str,
+    right_x: f32,
+    baseline_y: f32,
+    color: Color,
+) {
+    // Cell width = widest A-Z / 0-9 glyph in this font.
+    let cell_w = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        .chars()
+        .map(|c| font.measure_str(c.to_string().as_str(), None).0)
+        .fold(0.0_f32, f32::max);
+
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    paint.set_color(color);
+
+    let n = text.chars().count();
+    let mut x = right_x - cell_w * n as f32;
+    for ch in text.chars() {
+        let s = ch.to_string();
+        let w = font.measure_str(s.as_str(), None).0;
+        canvas.draw_str(s.as_str(), (x + (cell_w - w) * 0.5, baseline_y), font, &paint);
+        x += cell_w;
+    }
 }
 
 fn dual_letter_alt3(letter: &str) -> Color4f {

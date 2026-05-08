@@ -88,6 +88,25 @@ impl Card {
         }
         t.to_string()
     }
+
+    /// Rewrite land oracle text to pre-M10 wording:
+    ///   "({T}: Add {U}.)"  →  "{T}: Add {U} to your mana pool."
+    ///   "({T}: Add {R} or {G}.)"  →  "{T}: Add {R} or {G} to your mana pool."
+    pub fn old_oracle_text(&self) -> Option<String> {
+        let text = self.oracle_text.as_deref()?;
+        if !self.type_line.contains("Land") {
+            return Some(text.to_string());
+        }
+        // Strip outer parens if present, then replace trailing "." with the old wording.
+        let inner = text.trim();
+        let inner = inner.strip_prefix('(').and_then(|s| s.strip_suffix(')')).unwrap_or(inner);
+        let rewritten = if let Some(base) = inner.strip_suffix('.') {
+            format!("{base} to your mana pool.")
+        } else {
+            inner.to_string()
+        };
+        Some(rewritten)
+    }
 }
 
 fn strip_prefix_then_dash<'a>(s: &'a str, prefix: &str, dash: &str) -> Option<&'a str> {

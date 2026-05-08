@@ -40,9 +40,6 @@ enum Command {
         /// Directory containing Scryfall mana SVGs (R.svg, G.svg, ...).
         #[arg(long)]
         symbols_dir: Option<PathBuf>,
-        /// Draw a bottom-left info stamp with this version string (e.g. "1").
-        #[arg(long)]
-        stamp_version: Option<String>,
         /// Card frame style.
         #[arg(long, value_enum, default_value_t = StyleArg::Basic)]
         style: StyleArg,
@@ -61,8 +58,8 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Render { card_json, art, out, dpi, fonts_dir, symbols_dir, stamp_version, style } => {
-            cmd_render(&card_json, art.as_deref(), &out, dpi, fonts_dir, symbols_dir, stamp_version, style)
+        Command::Render { card_json, art, out, dpi, fonts_dir, symbols_dir, style } => {
+            cmd_render(&card_json, art.as_deref(), &out, dpi, fonts_dir, symbols_dir, style)
         }
         Command::GenSymbols { out_dir, fonts_dir } => {
             cmd_gen_symbols(out_dir, fonts_dir)
@@ -106,7 +103,6 @@ fn cmd_render(
     dpi: f32,
     fonts_dir: Option<PathBuf>,
     symbols_dir: Option<PathBuf>,
-    stamp_version: Option<String>,
     style: StyleArg,
 ) -> Result<()> {
     let json_bytes = std::fs::read(card_json)
@@ -119,7 +115,6 @@ fn cmd_render(
         fonts_dir,
         symbols_dir: resolve_symbols_dir(symbols_dir),
         rails_dir: resolve_rails_dir(),
-        stamp_version,
         card_style: match style {
             StyleArg::Basic   => CardStyle::Basic,
             StyleArg::Classic => CardStyle::Classic,

@@ -63,7 +63,7 @@ fn build_svg(fonts: &Fonts, label: &str) -> String {
     // Scale so the tightest axis has exactly GLYPH_MARGIN units between the
     // ink edge and the circle boundary.  usable = 2*(CIRCLE_R - GLYPH_MARGIN).
     let usable = 2.0 * (CIRCLE_R - GLYPH_MARGIN);
-    let scale = (usable / ink.width()).min(usable / ink.height());
+    let scale = (usable / ink.width()).min(usable / ink.height()) * 0.90;
 
     // Translate: map ink centre to (50, 50).
     let ink_cx = (ink.left + ink.right) * 0.5;

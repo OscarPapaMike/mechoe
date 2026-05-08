@@ -33,8 +33,6 @@ pub struct Fonts {
     pub flavor: Typeface,
     /// Windsor Heavy / Bold — generic mana numeral SVG generation.
     pub heavy: Typeface,
-    /// Google Code Sans (or Courier fallback) — bottom-left info stamp.
-    pub code: Typeface,
     /// Noto Sans Symbols 2 — set symbol glyph on the type line.
     pub symbols2: Option<Typeface>,
 }
@@ -84,14 +82,6 @@ impl Fonts {
             .or_else(|| try_load_named(assets_dir, "Windsor Bold.ttf", &mgr))
             .unwrap_or_else(|| demi_face.clone());
 
-        let code_face = mgr.match_family_style("Google Code Sans", regular)
-            .or_else(|| try_load_named(assets_dir, "GoogleCodeSans-Regular.ttf", &mgr))
-            .or_else(|| try_load_named(assets_dir, "GoogleCodeSans.ttf", &mgr))
-            .or_else(|| mgr.match_family_style("Courier New", regular))
-            .or_else(|| mgr.match_family_style("Courier", regular))
-            .or_else(|| mgr.match_family_style("Monaco", regular))
-            .unwrap_or_else(|| roman.clone());
-
         let symbols2 = mgr.match_family_style("Noto Sans Symbols 2", regular)
             .or_else(|| try_load_named(assets_dir, "NotoSansSymbols2-Regular.ttf", &mgr));
 
@@ -101,7 +91,6 @@ impl Fonts {
             light: light_face,
             flavor: flavor_face,
             heavy: heavy_face,
-            code: code_face,
             symbols2,
         }
     }
