@@ -99,30 +99,70 @@ pub fn render_png(
         CardStyle::Basic => {
             // Alt color fills the inner area; main color paints the title bar on top.
             canvas.draw_rect(frame.inner_rect().to_skia(dpi), &alt_paint);
-            // Dual land: 8 concentric rectangular rings alternating the two mana colors.
+            // Dual land: 8 concentric rectangular rings + cloudy noise overlay.
             let ci = card.color_identity.as_deref().unwrap_or(&[]);
             if card.type_line.contains("Land")
                 && !card.type_line.contains("Basic")
                 && ci.len() >= 2
             {
-                let color_a = dual_letter_color(&ci[0]);
-                let color_b = dual_letter_color(&ci[1]);
+                let color_a = dual_letter_alt3(&ci[0]);
+                let color_b = dual_letter_alt3(&ci[1]);
                 let inner_px = frame.inner_rect().to_skia(dpi);
+                let rules_top_px = frame.rules_box.to_skia(dpi).top;
+                let box_px = skia_safe::Rect::new(
+                    inner_px.left,
+                    rules_top_px - mm_to_px(0.7, dpi),
+                    inner_px.right,
+                    inner_px.bottom,
+                );
                 const N_RINGS: u32 = 8;
-                let step_x = inner_px.width()  / (2 * N_RINGS) as f32;
-                let step_y = inner_px.height() / (2 * N_RINGS) as f32;
+                let step_x = box_px.width()  / (2 * N_RINGS) as f32;
+                let step_y = box_px.height() / (2 * N_RINGS) as f32;
+
+                canvas.save();
+                canvas.clip_rect(box_px, skia_safe::ClipOp::Intersect, false);
+
                 for i in 0..N_RINGS {
                     let color = if i % 2 == 0 { color_a } else { color_b };
                     let mut ring_paint = Paint::new(color, None);
                     ring_paint.set_anti_alias(true);
                     let s = i as f32;
                     let rect = skia_safe::Rect::new(
-                        inner_px.left   + s * step_x,
-                        inner_px.top    + s * step_y,
-                        inner_px.right  - s * step_x,
-                        inner_px.bottom - s * step_y,
+                        box_px.left   + s * step_x,
+                        box_px.top    + s * step_y,
+                        box_px.right  - s * step_x,
+                        box_px.bottom - s * step_y,
                     );
                     canvas.draw_rect(rect, &ring_paint);
+                }
+
+                // Low-frequency fractal noise overlay for a cloudy texture.
+                let ppm = dpi.px_per_mm();
+                let freq = 1.0 / (ppm * 12.0); // ~12 mm cloud blobs
+                if let Some(noise) = skia_shaders::fractal_noise((freq, freq), 3, 0.0, None) {
+                    let mut noise_paint = Paint::default();
+                    noise_paint.set_shader(noise);
+                    noise_paint.set_blend_mode(BlendMode::Multiply);
+                    noise_paint.set_alpha_f(0.0);
+                    canvas.draw_rect(box_px, &noise_paint);
+                }
+
+                canvas.restore();
+            }
+            // Basic lands: alt3 fill + noise overlay on the rules box.
+            if card.type_line.contains("Basic Land") {
+                let box_px = frame.rules_box.to_skia(dpi);
+                let mut alt3_paint = Paint::new(frame.alt_color(), None);
+                alt3_paint.set_anti_alias(true);
+                canvas.draw_rect(box_px, &alt3_paint);
+                let ppm = dpi.px_per_mm();
+                let freq = 1.0 / (ppm * 12.0);
+                if let Some(noise) = skia_shaders::fractal_noise((freq, freq), 3, 0.0, None) {
+                    let mut noise_paint = Paint::default();
+                    noise_paint.set_shader(noise);
+                    noise_paint.set_blend_mode(BlendMode::Multiply);
+                    noise_paint.set_alpha_f(0.0);
+                    canvas.draw_rect(box_px, &noise_paint);
                 }
             }
             canvas.draw_rect(frame.title_bar.to_skia(dpi), &title_paint);
@@ -264,9 +304,9 @@ pub fn render_png(
     let set_info_gap_mm = 0.5;
     let symbol_size_px  = nom_h * SET_SYMBOL_SCALE;
     // Right edge of set symbol flush with right edge of type bar.
-    let sym_cx          = type_padded.right - symbol_size_px * 0.5;
     let right_pad_px    = 0.0_f32;
-    let info_right      = sym_cx - symbol_size_px * 0.5 - mm_to_px(set_info_gap_mm, dpi);
+    let sym_right       = type_padded.right - right_pad_px;
+    let info_right      = sym_right - symbol_size_px - mm_to_px(set_info_gap_mm, dpi);
 
     // Reserve room for right-side block when fitting type text width.
     let right_reserve_px = type_padded.right - info_right;
@@ -292,21 +332,22 @@ pub fn render_png(
     // 8. Set symbol centered on nom_cy, sized by SET_SYMBOL_SCALE.
     draw_set_symbol(canvas, fonts.symbols2.as_ref(), type_padded, symbol_size_px, right_pad_px, nom_cy, set_symbol_color);
 
-    // 8b. Stamp: two lines centered on nom_cy, each nom_h * STAMP_SCALE / 2 tall.
-    let info_left = type_padded.left;
-    let stamp_line_h = nom_h * STAMP_SCALE * 0.5;
-    let set_info_color = color4f_to_color(frame.alt2_color());
-    let set_info_style = |color: Color| TextStyle::new(stamp_line_h * 0.82)
-        .with_color(color)
-        .with_halign(HAlign::Right)
-        .with_valign_frac(0.50);
-    if let Some(set_code) = &card.set_code {
-        let top_rect = skia_safe::Rect::new(info_left, nom_cy - stamp_line_h, info_right, nom_cy);
-        draw_in_rect(canvas, &fonts.demi, &set_code.to_uppercase(), top_rect, set_info_style(set_info_color));
-    }
-    if let Some(num) = &card.collector_number {
-        let bot_rect = skia_safe::Rect::new(info_left, nom_cy, info_right, nom_cy + stamp_line_h);
-        draw_in_rect(canvas, &fonts.demi, num, bot_rect, set_info_style(set_info_color));
+    // 8b. Stamp: two lines centered on nom_cy — Basic style only.
+    if frame.card_style == CardStyle::Basic {
+        let stamp_line_h = nom_h * STAMP_SCALE * 0.5;
+        let set_info_color = color4f_to_color(frame.alt2_color());
+        let set_info_style = |color: Color| TextStyle::new(stamp_line_h * 0.82)
+            .with_color(color)
+            .with_halign(HAlign::Right)
+            .with_valign_frac(0.50);
+        if let Some(set_code) = &card.set_code {
+            let top_rect = skia_safe::Rect::new(info_right - type_padded.width(), nom_cy - stamp_line_h, info_right, nom_cy);
+            draw_in_rect(canvas, &fonts.demi, &set_code.to_uppercase(), top_rect, set_info_style(set_info_color));
+        }
+        if let Some(num) = &card.collector_number {
+            let bot_rect = skia_safe::Rect::new(info_right - type_padded.width(), nom_cy, info_right, nom_cy + stamp_line_h);
+            draw_in_rect(canvas, &fonts.demi, num, bot_rect, set_info_style(set_info_color));
+        }
     }
 
     // 9. Rules text + flavor text. Both are black on the alt-color
@@ -840,7 +881,7 @@ fn color4f_to_color(c: Color4f) -> Color {
     )
 }
 
-fn dual_letter_color(letter: &str) -> Color4f {
+fn dual_letter_alt3(letter: &str) -> Color4f {
     use crate::scryfall::FrameColor;
     let fc = match letter {
         "W" => FrameColor::White,
@@ -850,5 +891,5 @@ fn dual_letter_color(letter: &str) -> Color4f {
         "G" => FrameColor::Green,
         _   => FrameColor::Colorless,
     };
-    FrameSpec::basic(fc).main_color()
+    FrameSpec::basic(fc).alt3_color()
 }

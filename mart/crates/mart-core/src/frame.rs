@@ -164,7 +164,7 @@ impl FrameSpec {
             FrameColor::Gold      => Color4f::new(0.671, 0.639, 0.384, 1.0), // #ABA362
             FrameColor::Colorless => Color4f::new(0.412, 0.341, 0.314, 1.0), // #695750
             FrameColor::Artifact  => Color4f::new(0.412, 0.341, 0.314, 1.0), // #695750
-            FrameColor::Land      => Color4f::new(0.624, 0.573, 0.549, 1.0), // #9F928C
+            FrameColor::Land      => Color4f::new(0.514, 0.451, 0.420, 1.0), // #83736B
         }
     }
 
@@ -204,6 +204,52 @@ impl FrameSpec {
         )
     }
 
+    /// 40% alt + 60% alt2: slightly more saturated than alt, lighter than alt2.
+    pub fn alt3_color(&self) -> Color4f {
+        let a = self.alt_color();
+        let a2 = self.alt2_color();
+        Color4f::new(
+            a.r * 0.4 + a2.r * 0.6,
+            a.g * 0.4 + a2.g * 0.6,
+            a.b * 0.4 + a2.b * 0.6,
+            1.0,
+        )
+    }
+
     pub fn frame_paint_color(&self) -> Color4f { self.alt_color() }
     pub fn bar_paint_color(&self)   -> Color4f { self.main_color() }
+}
+
+fn rgb_to_hsv(r: f32, g: f32, b: f32) -> (f32, f32, f32) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let delta = max - min;
+    let v = max;
+    let s = if max == 0.0 { 0.0 } else { delta / max };
+    let h = if delta == 0.0 {
+        0.0
+    } else if max == r {
+        60.0 * (((g - b) / delta).rem_euclid(6.0))
+    } else if max == g {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    (h, s, v)
+}
+
+fn hsv_to_rgb(h: f32, s: f32, v: f32) -> (f32, f32, f32) {
+    if s == 0.0 { return (v, v, v); }
+    let c = v * s;
+    let x = c * (1.0 - ((h / 60.0).rem_euclid(2.0) - 1.0).abs());
+    let m = v - c;
+    let (r1, g1, b1) = match (h / 60.0) as u32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    (r1 + m, g1 + m, b1 + m)
 }

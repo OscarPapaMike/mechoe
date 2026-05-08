@@ -533,7 +533,7 @@ fn render_card_thread(
         fonts_dir: None,
         symbols_dir: if symbols_dir.is_dir() { Some(symbols_dir) } else { None },
         rails_dir,
-        stamp_version: Some("1".to_string()),
+        stamp_version: None,
         card_style: CardStyle::Basic,
     };
     render_png(&card, paths.art.as_deref(), &opts).map_err(|e| e.to_string())
