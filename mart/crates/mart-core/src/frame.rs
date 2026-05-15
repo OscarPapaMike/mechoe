@@ -50,8 +50,8 @@ impl FrameSpec {
         let type_h = 4.2;
         let rules_gap = 0.7;
         let rules_y = type_y + type_h + rules_gap;         // 59.85
-        let pt_y = CARD_HEIGHT_MM - border_mm - 8.0 - 0.5; // 77.4
-        let rules_h = (pt_y - rules_y - 0.45).max(0.0);
+        let inner_bot = CARD_HEIGHT_MM - border_mm;         // 85.9
+        let rules_h = (inner_bot - rules_y - 0.5).max(0.0);
 
         let pt_h = 8.0;
         let pt_w = 16.0;
@@ -174,20 +174,44 @@ impl FrameSpec {
 
     /// Alt color derived from title_frame_color (for card name text on the title bar).
     pub fn title_alt_color(&self) -> Color4f {
-        Self { frame_color: self.title_frame_color, ..*self }.alt_color()
-    }
-
-    /// Main color brightened and desaturated: 60% toward grey, then 50% toward white.
-    pub fn alt_color(&self) -> Color4f {
-        let c = self.main_color();
+        let c = Self { frame_color: self.title_frame_color, ..*self }.main_color();
         let grey = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-        let r = c.r + 0.60 * (grey - c.r);
-        let g = c.g + 0.60 * (grey - c.g);
-        let b = c.b + 0.60 * (grey - c.b);
+        // Half the desaturation of alt_color (30% toward grey instead of 60%).
+        let r = c.r + 0.30 * (grey - c.r);
+        let g = c.g + 0.30 * (grey - c.g);
+        let b = c.b + 0.30 * (grey - c.b);
         Color4f::new(
             r + 0.50 * (1.0 - r),
             g + 0.50 * (1.0 - g),
             b + 0.50 * (1.0 - b),
+            1.0,
+        )
+    }
+
+    /// Name text color: main_color brightened 50% toward white, no desaturation.
+    /// Preserves hue saturation fully while lifting luminance for legibility on
+    /// the dark title bar.
+    pub fn name_color(&self) -> Color4f {
+        let c = Self { frame_color: self.title_frame_color, ..*self }.main_color();
+        Color4f::new(
+            c.r + 0.50 * (1.0 - c.r),
+            c.g + 0.50 * (1.0 - c.g),
+            c.b + 0.50 * (1.0 - c.b),
+            1.0,
+        )
+    }
+
+    /// Main color brightened and lightly desaturated: 25% toward grey, then 35% toward white.
+    pub fn alt_color(&self) -> Color4f {
+        let c = self.main_color();
+        let grey = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
+        let r = c.r + 0.25 * (grey - c.r);
+        let g = c.g + 0.25 * (grey - c.g);
+        let b = c.b + 0.25 * (grey - c.b);
+        Color4f::new(
+            r + 0.35 * (1.0 - r),
+            g + 0.35 * (1.0 - g),
+            b + 0.35 * (1.0 - b),
             1.0,
         )
     }
@@ -204,14 +228,14 @@ impl FrameSpec {
         )
     }
 
-    /// 40% alt + 60% alt2: slightly more saturated than alt, lighter than alt2.
+    /// 90% alt + 10% alt2: close to alt, very lightly shifted toward alt2.
     pub fn alt3_color(&self) -> Color4f {
         let a = self.alt_color();
         let a2 = self.alt2_color();
         Color4f::new(
-            a.r * 0.4 + a2.r * 0.6,
-            a.g * 0.4 + a2.g * 0.6,
-            a.b * 0.4 + a2.b * 0.6,
+            a.r * 0.9 + a2.r * 0.1,
+            a.g * 0.9 + a2.g * 0.1,
+            a.b * 0.9 + a2.b * 0.1,
             1.0,
         )
     }

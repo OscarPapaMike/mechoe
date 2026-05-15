@@ -1,0 +1,103 @@
+# Halftone filter test cards
+# Edit this table freely — add rows, remove rows, change params, add notes.
+# Each entry must have: set, num, name.  'note' is optional free text.
+#
+# Run from the mimg/ directory:
+#   cargo run -- --spectra           (filter all cards, save spectra too)
+#   cargo run -- --peak-threshold 6  (more aggressive peak detection)
+#   cargo run -- --notch-radius 0.02 (wider notches)
+# Output lands in mimg/out/
+
+# ── Palette-test cards (canonical cross-color set) ──────────────────────────
+
+[[cards]]
+set  = "LEA"
+num  = "161"
+name = "Lightning Bolt"
+note = "red — 1993 Alpha"
+
+[[cards]]
+set  = "LEA"
+num  = "186"
+name = "Birds of Paradise"
+note = "green — 1993 Alpha"
+
+[[cards]]
+set  = "LEA"
+num  = "282"
+name = "Taiga"
+note = "dual land — 1993 Alpha"
+
+[[cards]]
+set  = "LEA"
+num  = "288"
+name = "Island"
+note = "basic land — 1993 Alpha"
+
+[[cards]]
+set  = "DRK"
+num  = "30"
+name = "Leviathan"
+note = "blue — 1994 The Dark"
+
+[[cards]]
+set  = "ULG"
+num  = "14"
+name = "Mother of Runes"
+note = "white — 1999 Urza's Legacy"
+
+[[cards]]
+set  = "TMP"
+num  = "107"
+name = "Abandon Hope"
+note = "black — 1997 Tempest"
+
+[[cards]]
+set  = "TMP"
+num  = "281"
+name = "Cursed Scroll"
+note = "artifact — 1997 Tempest"
+
+[[cards]]
+set  = "APC"
+num  = "94"
+name = "Cromat"
+note = "gold — 2001 Apocalypse"
+
+[[cards]]
+set  = "WTH"
+num  = "164"
+name = "Gemstone Mine"
+note = "land — 1997 Weatherlight"
+
+# ── Extra era samples (for halftone comparison across print generations) ─────
+
+[[cards]]
+set  = "ARN"
+num  = "1"
+name = "Abu Ja'far"
+note = "1993 Arabian Nights — earliest expansion"
+
+[[cards]]
+set  = "ATQ"
+num  = "10"
+name = "Hurkyl's Recall"
+note = "1994 Antiquities"
+
+[[cards]]
+set  = "4ED"
+num  = "100"
+name = "Sindbad"
+note = "1995 Fourth Edition — wide-print era"
+
+[[cards]]
+set  = "ICE"
+num  = "100"
+name = "Snow Devil"
+note = "1995 Ice Age"
+
+[[cards]]
+set  = "USG"
+num  = "214"
+name = "Shivan Hellkite"
+note = "1998 Urza's Saga — late 90s offset print"

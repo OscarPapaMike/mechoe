@@ -1,0 +1,29 @@
+[[cards]]
+set  = "LEA"
+num  = "1"
+name = "Animate Wall"
+note = "white"
+
+[[cards]]
+set  = "LEA"
+num  = "50"
+name = "Braingeyser"
+note = "blue"
+
+[[cards]]
+set  = "LEA"
+num  = "100"
+name = "Deathgrip"
+note = "black"
+
+[[cards]]
+set  = "LEA"
+num  = "150"
+name = "Firebreathing"
+note = "red"
+
+[[cards]]
+set  = "LEA"
+num  = "232"
+name = "Black Lotus"
+note = "artifact"

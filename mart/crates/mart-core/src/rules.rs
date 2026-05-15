@@ -59,6 +59,7 @@ struct Layout {
     total_height_px: f32,
     line_left_x: f32,
     line_right_x: f32,
+    notch: Option<(f32, f32)>,  // (notch_top_y, notch_right_x)
 }
 
 fn atom_width(
@@ -89,6 +90,9 @@ fn layout(
     paragraph_gap_px: f32,
     inner: Rect,
     plain_symbols: bool,
+    // (notch_top_y, notch_right_x): lines whose top is at or below this y
+    // are constrained to notch_right_x on the right instead of inner.right.
+    notch: Option<(f32, f32)>,
 ) -> Layout {
     let space_w_px = font.measure_str(" ", None).0.max(symbol_w_px * 0.25);
     let (_, metrics) = font.metrics();
@@ -107,13 +111,19 @@ fn layout(
             while i < atoms.len() && matches!(atoms[i], Atom::Space) { i += 1; }
             if i >= atoms.len() { break; }
 
+            let right_x = match notch {
+                Some((notch_top, notch_right)) if y + baseline_offset >= notch_top => notch_right,
+                _ => inner.right,
+            };
+            let avail_w = right_x - inner.left;
+
             let line_start = i;
             let mut line_w = 0.0_f32;
             let mut last_space_end = i;
 
             while i < atoms.len() {
                 let w = atom_width(&atoms[i], font, symbol_w_px, space_w_px, plain_symbols);
-                if line_w + w > inner.width() && i > line_start {
+                if line_w + w > avail_w && i > line_start {
                     break;
                 }
                 line_w += w;
@@ -146,6 +156,7 @@ fn layout(
         total_height_px: y - inner.top,
         line_left_x: inner.left,
         line_right_x: inner.right,
+        notch,
     }
 }
 
@@ -160,6 +171,15 @@ pub fn draw_rules(
     font_skew_x: f32,
     text_color: Color,
     center_max_lines: Option<usize>,
+    // (notch_top_y_px, notch_right_x_px): lines whose top falls at or below
+    // notch_top_y are wrapped to notch_right_x instead of rect_px.right.
+    notch_px: Option<(f32, f32)>,
+    // Optional drop shadow: (color, dx, dy) in pixels.
+    shadow: Option<(Color, f32, f32)>,
+    // Override the height used for vertical centering. When None, rect_px.height() is used.
+    // Pass the type-line-to-PT-box span for creature cards so short text centers in
+    // the visible creature text zone rather than just the rules rect.
+    center_height_px: Option<f32>,
 ) -> f32 {
     let paragraphs = tokenize(oracle_text);
     if paragraphs.iter().all(|p| p.is_empty()) {
@@ -186,6 +206,7 @@ pub fn draw_rules(
             paragraph_gap_px,
             inner,
             plain_symbols,
+            notch_px,
         );
         (lay, font, symbol_w_px)
     };
@@ -193,7 +214,8 @@ pub fn draw_rules(
     let center_check = |lay: &Layout| -> (f32, bool) {
         let do_center = center_max_lines.map_or(false, |max| lay.lines.len() <= max);
         let y_off = if do_center {
-            (inner.height() - lay.total_height_px) * 0.5
+            let h = center_height_px.unwrap_or_else(|| inner.height());
+            (h - lay.total_height_px) * 0.5
         } else {
             0.0
         };
@@ -216,7 +238,7 @@ pub fn draw_rules(
         let (y_off, center_h) = center_check(&lay);
         canvas.save();
         canvas.clip_rect(rect_px, ClipOp::Intersect, true);
-        draw_layout(canvas, &paragraphs, &lay, &font, upright.as_ref(), cache.as_deref_mut(), sw, text_color, y_off, center_h);
+        draw_layout(canvas, &paragraphs, &lay, &font, upright.as_ref(), cache.as_deref_mut(), sw, text_color, y_off, center_h, shadow);
         canvas.restore();
         return base_size_px;
     }
@@ -244,7 +266,7 @@ pub fn draw_rules(
     let (y_off, center_h) = center_check(&lay);
     canvas.save();
     canvas.clip_rect(rect_px, ClipOp::Intersect, true);
-    draw_layout(canvas, &paragraphs, &lay, &font, upright.as_ref(), cache.as_deref_mut(), sw, text_color, y_off, center_h);
+    draw_layout(canvas, &paragraphs, &lay, &font, upright.as_ref(), cache.as_deref_mut(), sw, text_color, y_off, center_h, shadow);
     canvas.restore();
     size
 }
@@ -260,14 +282,21 @@ fn draw_layout(
     text_color: Color,
     y_offset: f32,
     center_h: bool,
+    shadow: Option<(Color, f32, f32)>,
 ) {
     let default_space_w = font.measure_str(" ", None).0.max(symbol_w_px * 0.25);
     let plain_symbols = cache.is_none();
-    let line_w = layout.line_right_x - layout.line_left_x;
 
     let mut text_paint = Paint::default();
     text_paint.set_anti_alias(true);
     text_paint.set_color(text_color);
+
+    let mut shadow_paint = shadow.map(|(color, _, _)| {
+        let mut p = Paint::default();
+        p.set_anti_alias(true);
+        p.set_color(color);
+        p
+    });
 
     let mut img_paint = Paint::default();
     img_paint.set_anti_alias(true);
@@ -275,6 +304,12 @@ fn draw_layout(
     for line in &layout.lines {
         let atoms = &paragraphs[line.para_idx][line.start..line.end];
         let baseline_y = line.baseline_y + y_offset;
+
+        let right_x = match layout.notch {
+            Some((notch_top, notch_right)) if line.baseline_y >= notch_top => notch_right,
+            _ => layout.line_right_x,
+        };
+        let line_w = right_x - layout.line_left_x;
 
         // When centering, each line starts from its natural center — no justification.
         let natural_w = |atoms: &[Atom]| -> f32 {
@@ -321,11 +356,17 @@ fn draw_layout(
         for atom in atoms {
             match atom {
                 Atom::Word(w) => {
+                    if let (Some((_, dx, dy)), Some(sp)) = (shadow, shadow_paint.as_ref()) {
+                        canvas.draw_str(w, (x + dx, baseline_y + dy), font, sp);
+                    }
                     canvas.draw_str(w, (x, baseline_y), font, &text_paint);
                     x += font.measure_str(w, None).0;
                 }
                 Atom::Upright(w) => {
                     let uf = upright_font.unwrap_or(font);
+                    if let (Some((_, dx, dy)), Some(sp)) = (shadow, shadow_paint.as_ref()) {
+                        canvas.draw_str(w, (x + dx, baseline_y + dy), uf, sp);
+                    }
                     canvas.draw_str(w, (x, baseline_y), uf, &text_paint);
                     x += uf.measure_str(w, None).0;
                 }

@@ -1,0 +1,17 @@
+[package]
+name = "mimg"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mimg"
+path = "src/main.rs"
+
+[dependencies]
+anyhow  = "1"
+clap    = { version = "4", features = ["derive"] }
+eframe  = "0.29"
+image   = "0.25"
+rustfft = "6"
+serde   = { version = "1", features = ["derive"] }
+toml    = "0.8"

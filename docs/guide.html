@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>mechoe — Tool Guide</title>
+<style>
+  :root {
+    --bg:      #1a1a1a;
+    --panel:   #242424;
+    --border:  #333;
+    --accent:  #c8a96e;
+    --accent2: #7eb8c8;
+    --text:    #ddd;
+    --muted:   #888;
+    --code-bg: #2a2a2a;
+    --red:     #c86e6e;
+    --green:   #7ec87e;
+    --blue:    #6e8ec8;
+    --yellow:  #c8c86e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Georgia", serif;
+    font-size: 15px;
+    line-height: 1.65;
+    padding: 2rem 1rem;
+  }
+  .page { max-width: 860px; margin: 0 auto; }
+
+  /* ── header ── */
+  h1 {
+    font-size: 2.2rem;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 2.5rem; }
+
+  /* ── section headings ── */
+  h2 {
+    font-size: 1.5rem;
+    color: var(--accent);
+    margin: 2.8rem 0 0.8rem;
+    border-left: 3px solid var(--accent);
+    padding-left: 0.7rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    color: var(--accent2);
+    margin: 1.6rem 0 0.4rem;
+  }
+
+  /* ── tool badges in TOC ── */
+  nav {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 2rem;
+  }
+  nav p { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.6rem; }
+  nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: 0.6rem; }
+  nav a {
+    display: inline-block;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.25rem 0.75rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-family: monospace;
+    font-size: 0.9rem;
+    transition: border-color 0.15s;
+  }
+  nav a:hover { border-color: var(--accent); }
+
+  /* ── tool section wrapper ── */
+  .tool-section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1.5rem 1.8rem;
+    margin-bottom: 1.8rem;
+  }
+  .tool-section h2 { margin-top: 0; }
+
+  /* ── role pill ── */
+  .role {
+    display: inline-block;
+    font-size: 0.75rem;
+    font-family: monospace;
+    border-radius: 3px;
+    padding: 0.1rem 0.5rem;
+    margin-left: 0.6rem;
+    vertical-align: middle;
+    position: relative;
+    top: -2px;
+  }
+  .cli  { background: #2a3a2a; color: var(--green);  border: 1px solid #3a5a3a; }
+  .gui  { background: #2a2a3a; color: var(--blue);   border: 1px solid #3a3a5a; }
+
+  /* ── code blocks ── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0.9rem 1.1rem;
+    overflow-x: auto;
+    font-family: "SF Mono", "Fira Mono", monospace;
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 0.6rem 0 1rem;
+  }
+  code {
+    font-family: "SF Mono", "Fira Mono", monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1em 0.35em;
+    color: var(--accent2);
+  }
+  .comment { color: var(--muted); }
+
+  /* ── command table ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.6rem 0 1rem;
+    font-size: 0.88rem;
+  }
+  th {
+    text-align: left;
+    color: var(--muted);
+    font-weight: normal;
+    border-bottom: 1px solid var(--border);
+    padding: 0.35rem 0.6rem;
+    font-family: monospace;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  td { padding: 0.4rem 0.6rem; border-bottom: 1px solid #2c2c2c; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td:first-child { font-family: monospace; color: var(--accent2); white-space: nowrap; }
+
+  /* ── key bindings ── */
+  kbd {
+    display: inline-block;
+    font-family: monospace;
+    font-size: 0.82rem;
+    background: #2e2e2e;
+    border: 1px solid #555;
+    border-bottom: 2px solid #444;
+    border-radius: 3px;
+    padding: 0.1rem 0.45rem;
+    color: #ccc;
+  }
+
+  /* ── workflow steps ── */
+  ol.steps { padding-left: 1.4rem; }
+  ol.steps li { margin: 0.4rem 0; }
+
+  /* ── note box ── */
+  .note {
+    background: #1e2a1e;
+    border-left: 3px solid var(--green);
+    padding: 0.7rem 1rem;
+    border-radius: 0 4px 4px 0;
+    margin: 0.8rem 0;
+    font-size: 0.9rem;
+    color: #aaa;
+  }
+  .note strong { color: var(--green); }
+
+  /* ── flag list ── */
+  dl { margin: 0.4rem 0 1rem; }
+  dt { font-family: monospace; color: var(--accent2); margin-top: 0.7rem; }
+  dd { margin-left: 1.4rem; color: var(--text); }
+
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+  p  { margin: 0.5rem 0; }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>mechoe</h1>
+<p class="subtitle">Tool guide — mdata · mart · mgui · mtable</p>
+
+<nav>
+  <p>Jump to tool</p>
+  <ul>
+    <li><a href="#mdata">mdata</a></li>
+    <li><a href="#mart">mart</a></li>
+    <li><a href="#mgui">mgui</a></li>
+    <li><a href="#mtable">mtable</a></li>
+  </ul>
+</nav>
+
+<!-- ═══════════════════════════════════════════ mdata ═══ -->
+<div class="tool-section" id="mdata">
+<h2>mdata <span class="role cli">CLI</span></h2>
+<p>Scryfall data manager. Downloads card JSON and art, builds a local SQLite
+search index, and caches everything under <code>data/</code> so the rest of the
+toolchain can work offline.</p>
+
+<div class="note">
+  <strong>First-time setup:</strong> run <code>mdata sync</code> once to build the local index
+  before any other command will work. The bulk download is ~540 MB but is removed after
+  indexing; the index itself is much smaller.
+</div>
+
+<h3>Building &amp; running</h3>
+<pre><span class="comment"># from mechoe/mdata/</span>
+~/.cargo/bin/cargo build --release
+./target/release/mdata &lt;command&gt; [args]
+
+<span class="comment"># or during development</span>
+~/.cargo/bin/cargo run -- &lt;command&gt; [args]</pre>
+
+<p>The data directory is resolved automatically by walking up from the current
+working directory looking for <code>data/_meta/</code>. You can override it:</p>
+<pre>mdata --data-dir /path/to/data &lt;command&gt;
+<span class="comment"># or</span>
+MECHOE_DATA=/path/to/data mdata &lt;command&gt;</pre>
+
+<h3>Commands</h3>
+<table>
+  <tr><th>Command</th><th>Description</th></tr>
+  <tr>
+    <td>sync</td>
+    <td>Download the Scryfall bulk card file, build <code>data/_meta/index.db</code>,
+        and sync mana symbol SVGs. Must be run at least once.</td>
+  </tr>
+  <tr>
+    <td>fetch "&lt;name&gt;"</td>
+    <td>Fetch a card by exact name (case-insensitive). Downloads the oldest printing's
+        JSON and art crop into <code>data/&lt;SET&gt;/</code>. Skips download if already cached.</td>
+  </tr>
+  <tr>
+    <td>get &lt;SET&gt; &lt;num&gt;</td>
+    <td>Fetch a specific printing by set code and collector number.</td>
+  </tr>
+  <tr>
+    <td>pull &lt;SET&gt;</td>
+    <td>Download all cards in a set (JSON + art). Skips files already cached.</td>
+  </tr>
+  <tr>
+    <td>info "&lt;name&gt;"</td>
+    <td>List all printings of a card with cache status. No files downloaded.</td>
+  </tr>
+  <tr>
+    <td>fetch "&lt;name&gt;" --info-only</td>
+    <td>Same as <code>info</code>.</td>
+  </tr>
+</table>
+
+<h3>Examples</h3>
+<pre><span class="comment"># First-time setup</span>
+mdata sync
+
+<span class="comment"># Get a card (oldest printing)</span>
+mdata fetch "Lightning Bolt"
+
+<span class="comment"># See all printings without downloading</span>
+mdata info "Lightning Bolt"
+
+<span class="comment"># Get a specific printing (Alpha Shivan Dragon)</span>
+mdata get LEA 175
+
+<span class="comment"># Download an entire set</span>
+mdata pull DRK</pre>
+
+<h3>Data layout</h3>
+<pre>data/
+├── _meta/
+│   ├── index.db          <span class="comment"># SQLite search index (built by sync)</span>
+│   ├── symbols/          <span class="comment"># Mana symbol SVGs (R.svg, G.svg, ...)</span>
+│   └── rails/            <span class="comment"># Frame decoration assets</span>
+├── LEA/
+│   ├── 1.json            <span class="comment"># Card JSON (Scryfall format)</span>
+│   └── 1.jpg             <span class="comment"># Art crop</span>
+└── DRK/
+    ├── 1.json
+    └── 1.jpg</pre>
+</div>
+
+
+<!-- ═══════════════════════════════════════════ mart ═══ -->
+<div class="tool-section" id="mart">
+<h2>mart <span class="role cli">CLI</span></h2>
+<p>MTG proxy card renderer. Takes a Scryfall-format JSON file and an optional art
+image and produces a high-resolution PNG card in a 1993-era premodern frame style.</p>
+
+<h3>Building &amp; running</h3>
+<pre><span class="comment"># from mechoe/mart/</span>
+~/.cargo/bin/cargo build --release
+./target/release/mart &lt;command&gt; [args]
+
+<span class="comment"># or during development</span>
+~/.cargo/bin/cargo run -- &lt;command&gt; [args]</pre>
+
+<p>Symbols and font assets are resolved automatically by walking up from the
+current directory. Override with flags or <code>MECHOE_DATA</code>.</p>
+
+<h3>Commands</h3>
+
+<h3>render</h3>
+<p>Render a single card to PNG.</p>
+<pre>mart render &lt;card.json&gt; [art.jpg] [options]</pre>
+
+<dl>
+  <dt>card.json</dt>
+  <dd>Path to a Scryfall-format card JSON file (from <code>mdata fetch</code> or manually written).</dd>
+  <dt>art.jpg</dt>
+  <dd>Optional artwork file (PNG or JPEG). If omitted a placeholder fills the art box.</dd>
+  <dt>-o, --out &lt;path&gt;</dt>
+  <dd>Output PNG path. Default: <code>out.png</code>.</dd>
+  <dt>--dpi &lt;n&gt;</dt>
+  <dd>Render resolution. Default: <code>300</code> (750×1050 px). Use <code>1200</code> for print-quality output.</dd>
+  <dt>--style basic|classic</dt>
+  <dd>Frame style. <code>basic</code> (default) is the flat two-color premodern look.
+      <code>classic</code> uses explicit frame rails.</dd>
+  <dt>--fonts-dir &lt;dir&gt;</dt>
+  <dd>Directory containing Windsor font files if not installed system-wide.</dd>
+  <dt>--symbols-dir &lt;dir&gt;</dt>
+  <dd>Directory containing mana symbol SVGs. Auto-resolved from <code>data/_meta/symbols/</code>.</dd>
+</dl>
+
+<h3>gen-symbols</h3>
+<p>Generate SVG files for generic mana numerals (0–16, X, T) using Windsor Heavy.
+Run this after changing the font or numeral styling.</p>
+<pre>mart gen-symbols [--out-dir &lt;dir&gt;] [--fonts-dir &lt;dir&gt;]</pre>
+<p>Output defaults to <code>data/_meta/symbols/</code>.</p>
+
+<h3>Examples</h3>
+<pre><span class="comment"># Render at 300 DPI with placeholder art</span>
+mart render data/LEA/1.json -o /tmp/ancestral_recall.png
+
+<span class="comment"># Render with art at print quality</span>
+mart render data/LEA/1.json data/LEA/1.jpg -o /tmp/ancestral_recall.png --dpi 1200
+
+<span class="comment"># Render a card fetched by mdata (art + JSON)</span>
+mdata fetch "Birds of Paradise"
+mart render data/LEA/35.json data/LEA/35.jpg -o /tmp/bop.png --dpi 600
+
+<span class="comment"># Regenerate numeral symbols after font change</span>
+mart gen-symbols</pre>
+
+<h3>Card JSON format</h3>
+<p>mart reads standard Scryfall card JSON. Key fields used:</p>
+<table>
+  <tr><th>Field</th><th>Used for</th></tr>
+  <tr><td>name</td><td>Title bar text</td></tr>
+  <tr><td>mana_cost</td><td>Mana symbols in title bar (e.g. <code>{2}{G}{G}</code>)</td></tr>
+  <tr><td>type_line</td><td>Type line text and frame color logic</td></tr>
+  <tr><td>oracle_text</td><td>Rules text body</td></tr>
+  <tr><td>flavor_text</td><td>Italic flavor text (supports <code>*title*</code> for upright spans)</td></tr>
+  <tr><td>power / toughness</td><td>P/T in bottom-right corner (creatures only)</td></tr>
+  <tr><td>colors</td><td>Frame color selection</td></tr>
+  <tr><td>set / collector_number</td><td>Set code and number stamp in type line</td></tr>
+</table>
+</div>
+
+
+<!-- ═══════════════════════════════════════════ mgui ═══ -->
+<div class="tool-section" id="mgui">
+<h2>mgui <span class="role gui">GUI</span></h2>
+<p>Live card preview. A desktop window that watches a card JSON file and re-renders
+the card automatically whenever the file changes. Useful for iterating on card
+designs without re-running the CLI.</p>
+
+<h3>Building &amp; running</h3>
+<pre><span class="comment"># from mechoe/mgui/</span>
+~/.cargo/bin/cargo run --release</pre>
+
+<h3>Usage</h3>
+<p>mgui opens a window with a file picker at the top. Enter the path to a
+Scryfall JSON file and an optional art file. The card re-renders automatically
+when either file is modified on disk.</p>
+
+<p>The preview respects the same rendering pipeline as <code>mart render</code> — what
+you see in mgui is what you get from mart.</p>
+
+<h3>Tips</h3>
+<ul style="padding-left:1.4rem; margin:0.5rem 0;">
+  <li>Use <code>mdata fetch</code> to get a card JSON, then open it in mgui while editing.</li>
+  <li>mgui renders at screen resolution; use <code>mart render --dpi 1200</code> for the final file.</li>
+</ul>
+</div>
+
+
+<!-- ═══════════════════════════════════════════ mtable ═══ -->
+<div class="tool-section" id="mtable">
+<h2>mtable <span class="role gui">GUI</span></h2>
+<p>Virtual playmat. A desktop application for arranging and playing with cards on
+a zoomable, pannable board. Supports tapping, counters, grid snapping, and
+board save/load.</p>
+
+<h3>Building &amp; running</h3>
+<pre><span class="comment"># from mechoe/mtable/</span>
+~/.cargo/bin/cargo run --release</pre>
+
+<h3>Board controls</h3>
+<table>
+  <tr><th>Input</th><th>Action</th></tr>
+  <tr><td>Scroll wheel</td><td>Zoom in / out (0.1× – 10×)</td></tr>
+  <tr><td>Middle-click drag</td><td>Pan the board</td></tr>
+  <tr><td>Left-click drag</td><td>Move a card or counter</td></tr>
+  <tr><td>Right-click drag</td><td>Rectangle-select multiple objects</td></tr>
+  <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove selected objects</td></tr>
+</table>
+
+<h3>Card actions</h3>
+<table>
+  <tr><th>Input</th><th>Action</th></tr>
+  <tr><td>Click DECK box</td><td>Spawn a new card</td></tr>
+  <tr><td>Double-click card</td><td>Tap / untap (rotate 90°)</td></tr>
+  <tr><td>Name field + click DECK</td><td>Spawn card with custom label</td></tr>
+</table>
+
+<h3>Counters &amp; tokens</h3>
+<table>
+  <tr><th>Input</th><th>Action</th></tr>
+  <tr><td>Click BAG box</td><td>Spawn a counter</td></tr>
+  <tr><td>Label field + click BAG</td><td>Spawn counter with custom label</td></tr>
+  <tr><td>Drop counter onto card</td><td>Counter attaches — moves with the card</td></tr>
+</table>
+
+<h3>Grid snapping</h3>
+<p>Cards snap to a 100×140 grid when dropped within 40×60 px of a grid intersection.
+A semi-transparent red overlay shows the snap target while dragging. Counters
+do not snap.</p>
+
+<h3>Save &amp; load</h3>
+<p>The <strong>Save</strong> button writes the full board state (cards, counters, positions,
+artwork, z-order) to <code>mtable_save.json</code> in the working directory.
+<strong>Load</strong> restores it.</p>
+</div>
+
+
+<!-- ═══════════════════════════════════════════ workflow ═══ -->
+<hr>
+<h2 style="border:none; padding:0; color: var(--accent);">Typical workflow</h2>
+<ol class="steps">
+  <li>Run <code>mdata sync</code> once to build the local index (requires internet).</li>
+  <li>Use <code>mdata fetch "Card Name"</code> to download a card's JSON and art into <code>data/</code>.</li>
+  <li>Open the JSON in <strong>mgui</strong> for a live preview while tweaking.</li>
+  <li>Run <code>mart render data/SET/NUM.json data/SET/NUM.jpg -o out.png --dpi 1200</code> to produce the final print-quality PNG.</li>
+  <li>Load finished cards into <strong>mtable</strong> to play with them on a virtual board.</li>
+</ol>
+
+</div><!-- .page -->
+</body>
+</html>

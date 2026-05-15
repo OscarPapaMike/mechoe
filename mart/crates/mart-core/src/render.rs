@@ -37,6 +37,8 @@ pub struct RenderOptions {
     /// When present, classic frames sample real-material images instead of noise.
     pub rails_dir: Option<PathBuf>,
     pub card_style: CardStyle,
+    /// Draw colored outlines around every layout zone for debugging.
+    pub debug_layout: bool,
 }
 
 impl Default for RenderOptions {
@@ -47,6 +49,7 @@ impl Default for RenderOptions {
             symbols_dir: None,
             rails_dir: None,
             card_style: CardStyle::Basic,
+            debug_layout: false,
         }
     }
 }
@@ -91,19 +94,19 @@ pub fn render_png(
     let mut title_paint = Paint::new(frame.title_color(), None);
     title_paint.set_anti_alias(true);
 
+    let ci = card.color_identity.as_deref().unwrap_or(&[]);
+
     // 2-3. Background fills — differ by style.
     match frame.card_style {
         CardStyle::Basic => {
             // Alt color fills the inner area; main color paints the title bar on top.
             canvas.draw_rect(frame.inner_rect().to_skia(dpi), &alt_paint);
-            // Dual land: 8 concentric rectangular rings + cloudy noise overlay.
-            let ci = card.color_identity.as_deref().unwrap_or(&[]);
+            // Non-basic land with 2+ color identity: concentric rectangular rings.
             if card.type_line.contains("Land")
                 && !card.type_line.contains("Basic")
                 && ci.len() >= 2
             {
-                let color_a = dual_letter_alt3(&ci[0]);
-                let color_b = dual_letter_alt3(&ci[1]);
+                let ring_colors: Vec<Color4f> = ci.iter().map(|l| dual_letter_alt3(l)).collect();
                 let inner_px = frame.inner_rect().to_skia(dpi);
                 let rules_top_px = frame.rules_box.to_skia(dpi).top;
                 let box_px = skia_safe::Rect::new(
@@ -120,7 +123,7 @@ pub fn render_png(
                 canvas.clip_rect(box_px, skia_safe::ClipOp::Intersect, false);
 
                 for i in 0..N_RINGS {
-                    let color = if i % 2 == 0 { color_a } else { color_b };
+                    let color = ring_colors[i as usize % ring_colors.len()];
                     let mut ring_paint = Paint::new(color, None);
                     ring_paint.set_anti_alias(true);
                     let s = i as f32;
@@ -269,7 +272,7 @@ pub fn render_png(
         title_padded.right + title_shadow_off, title_padded.bottom + title_shadow_off,
     );
     draw_in_rect(canvas, &fonts.roman, &card.name, title_shadow_rect, title_style(Color::BLACK));
-    draw_in_rect(canvas, &fonts.roman, &card.name, title_padded,      title_style(color4f_to_color(frame.title_alt_color())));
+    draw_in_rect(canvas, &fonts.roman, &card.name, title_padded,      title_style(color4f_to_color(frame.name_color())));
 
     // 7. Type line — Windsor Demi, old "Summon X" naming.
     // 7. Type line — all right-side elements (set symbol + stamp) are anchored
@@ -355,6 +358,50 @@ pub fn render_png(
     let oracle_owned = card.old_oracle_text();
     let oracle = oracle_owned.as_deref().filter(|s| !s.trim().is_empty());
     let flavor = card.flavor_text.as_deref().filter(|s| !s.trim().is_empty());
+
+    // For creature cards, compute the actual ink bounds of the P/T text so we
+    // can wrap rules text around it.  We measure now (before draw_rules) using
+    // the same font/size as the drawing step below.
+    let pt_ink_rect_px: Option<skia_safe::Rect> = if let (Some(p), Some(t)) = (&card.power, &card.toughness) {
+        if matches!(frame.card_style, CardStyle::Basic) {
+            let pt_text = format!("{p} / {t}");
+            let pt_size_px = mm_to_px(6.0, dpi);
+            let mut pt_font = skia_safe::Font::from_typeface(fonts.roman.clone(), pt_size_px);
+            pt_font.set_subpixel(true);
+            let (_, ink) = pt_font.measure_str(&pt_text, None);
+            let pad_px = mm_to_px(0.5, dpi);
+            let inner_right_px  = mm_to_px(CARD_WIDTH_MM - frame.border_mm, dpi);
+            let inner_bottom_px = mm_to_px(CARD_HEIGHT_MM - frame.border_mm, dpi);
+            let baseline_y = inner_bottom_px - pad_px;
+            let x = inner_right_px - pad_px - ink.right;
+            Some(skia_safe::Rect::new(
+                x + ink.left,
+                baseline_y + ink.top,
+                x + ink.right,
+                baseline_y + ink.bottom,
+            ))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    // Notch: protect the ink rect plus a small margin so rules text wraps around it.
+    let pt_notch_px: Option<(f32, f32)> = pt_ink_rect_px.map(|r| {
+        let margin_px = mm_to_px(1.0, dpi);
+        (r.top - margin_px, r.left - margin_px)
+    });
+
+    // Cap the rules area bottom so text never enters the P/T ink zone.
+    let effective_rules_bottom = match pt_notch_px {
+        Some((notch_top, _)) => notch_top.min(rules_rect_px.bottom),
+        None => rules_rect_px.bottom,
+    };
+    let effective_rules_rect = skia_safe::Rect::new(
+        rules_rect_px.left, rules_rect_px.top,
+        rules_rect_px.right, effective_rules_bottom,
+    );
+
     let (oracle_rect, flavor_rect) = match (oracle.is_some(), flavor.is_some()) {
         (true, true) => {
             // Split proportionally to character count so oracle-heavy cards
@@ -363,26 +410,50 @@ pub fn render_png(
             let f_chars = flavor.map_or(1, |s| s.chars().count()) as f32;
             let oracle_frac = (o_chars / (o_chars + f_chars)).clamp(0.45, 0.78);
             let gap = mm_to_px(0.8, dpi);
-            let split = rules_rect_px.top + rules_rect_px.height() * oracle_frac;
+            let split = effective_rules_rect.top + effective_rules_rect.height() * oracle_frac;
             (
                 Some(skia_safe::Rect::new(
-                    rules_rect_px.left,
-                    rules_rect_px.top,
-                    rules_rect_px.right,
+                    effective_rules_rect.left,
+                    effective_rules_rect.top,
+                    effective_rules_rect.right,
                     split,
                 )),
                 Some(skia_safe::Rect::new(
-                    rules_rect_px.left,
+                    effective_rules_rect.left,
                     split + gap,
-                    rules_rect_px.right,
-                    rules_rect_px.bottom,
+                    effective_rules_rect.right,
+                    effective_rules_rect.bottom,
                 )),
             )
         }
-        (true, false) => (Some(rules_rect_px), None),
-        (false, true) => (None, Some(rules_rect_px)),
+        (true, false) => (Some(effective_rules_rect), None),
+        (false, true) => (None, Some(effective_rules_rect)),
         (false, false) => (None, None),
     };
+
+    // Flavor text on non-basic multicolor lands sits over colored rings; add a
+    // white drop shadow so it reads against dark or saturated backgrounds.
+    let is_multi_land = card.type_line.contains("Land")
+        && !card.type_line.contains("Basic")
+        && ci.len() >= 2
+        && frame.card_style == CardStyle::Basic;
+    let flavor_shadow = if is_multi_land {
+        Some((Color::from_argb(160, 0, 0, 0), 1.0_f32, 1.0_f32))
+    } else {
+        None
+    };
+
+    // For creature cards (Basic style) with NO flavor text, short oracle text
+    // centers in the fixed type-bar-to-PT-box zone rather than the already-shrunk
+    // rules rect.  When flavor is also present, oracle_rect is a fraction of that
+    // zone (e.g. 45-78%), so center_height_px would exceed oracle_rect.height and
+    // push the text beyond its clip rect — never apply the override in that case.
+    let creature_center_h: Option<f32> =
+        if frame.card_style == CardStyle::Basic && card.power.is_some() && flavor.is_none() {
+            Some(frame.pt_box.to_skia(dpi).top - rules_rect_px.top)
+        } else {
+            None
+        };
 
     if let (Some(oracle), Some(rect)) = (oracle, oracle_rect) {
         draw_rules(
@@ -391,11 +462,14 @@ pub fn render_png(
             symbol_cache.as_mut(),
             oracle,
             rect,
-            /* base   */ mm_to_px(3.0, dpi),
-            /* min    */ mm_to_px(1.7, dpi),
-            /* skew   */ 0.0,
-            /* color  */ Color::BLACK,
-            /* center */ Some(2),
+            /* base        */ mm_to_px(3.0, dpi),
+            /* min         */ mm_to_px(1.7, dpi),
+            /* skew        */ 0.0,
+            /* color       */ Color::BLACK,
+            /* center      */ Some(2),
+            /* notch       */ pt_notch_px,
+            /* shadow      */ None,
+            /* center_h    */ creature_center_h,
         );
     }
     if let (Some(flavor), Some(rect)) = (flavor, flavor_rect) {
@@ -407,11 +481,14 @@ pub fn render_png(
             None,
             flavor,
             rect,
-            /* base   */ mm_to_px(2.6, dpi),
-            /* min    */ mm_to_px(1.4, dpi),
-            /* skew   */ -0.18,
-            /* color  */ flavor_color,
-            /* center */ Some(1),
+            /* base        */ mm_to_px(2.6, dpi),
+            /* min         */ mm_to_px(1.4, dpi),
+            /* skew        */ -0.18,
+            /* color       */ flavor_color,
+            /* center      */ Some(1),
+            /* notch       */ pt_notch_px,
+            /* shadow      */ flavor_shadow,
+            /* center_h    */ None,
         );
     }
 
@@ -448,6 +525,45 @@ pub fn render_png(
                 let baseline_y = cy - (ink.top + ink.bottom) * 0.5;
                 canvas.draw_str(&pt_text, (x, baseline_y), &pt_font, &pt_paint);
             }
+        }
+    }
+
+    // Debug overlay: colored outlines for every layout zone, drawn on top of everything.
+    if opts.debug_layout {
+        let mut dbg = Paint::default();
+        dbg.set_anti_alias(true);
+        dbg.set_style(paint::Style::Stroke);
+        dbg.set_stroke_width(mm_to_px(0.08, dpi));
+
+        let outline = |canvas: &skia_safe::Canvas, rect: skia_safe::Rect, r: u8, g: u8, b: u8, paint: &mut Paint| {
+            paint.set_color(Color::from_argb(210, r, g, b));
+            canvas.draw_rect(rect, paint);
+        };
+
+        // Title bar — red
+        outline(canvas, frame.title_bar.to_skia(dpi), 220, 40, 40, &mut dbg);
+        // Art box — orange
+        outline(canvas, frame.art_box.to_skia(dpi), 220, 140, 30, &mut dbg);
+        // Type bar — yellow
+        outline(canvas, frame.type_bar.to_skia(dpi), 200, 200, 30, &mut dbg);
+        // Rules box — green
+        outline(canvas, frame.rules_box.to_skia(dpi), 40, 180, 60, &mut dbg);
+        // Actual P/T ink bounds — cyan
+        if let Some(r) = pt_ink_rect_px {
+            outline(canvas, r, 30, 200, 220, &mut dbg);
+        }
+
+        // Notch zone (text-wrapping constraint) — magenta outline + lighter fill
+        if let Some((notch_top, notch_right)) = pt_notch_px {
+            let rules_px = frame.rules_box.to_skia(dpi);
+            // Left part: constrained text area in notch zone
+            let notch_zone = skia_safe::Rect::new(rules_px.left, notch_top, notch_right, rules_px.bottom);
+            dbg.set_color(Color::from_argb(180, 200, 40, 200));
+            canvas.draw_rect(notch_zone, &dbg);
+            // Right part: protected (no-text) area in notch zone
+            let protected = skia_safe::Rect::new(notch_right, notch_top, rules_px.right, rules_px.bottom);
+            dbg.set_color(Color::from_argb(180, 120, 40, 180));
+            canvas.draw_rect(protected, &dbg);
         }
     }
 

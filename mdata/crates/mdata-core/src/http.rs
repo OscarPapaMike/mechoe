@@ -19,13 +19,17 @@ pub struct Client {
 
 impl Client {
     pub fn new() -> Self {
+        Self::with_rate_ms(MIN_GAP_MS)
+    }
+
+    pub fn with_rate_ms(ms: u64) -> Self {
         Self {
             agent: AgentBuilder::new()
                 .timeout_connect(Duration::from_secs(10))
                 .timeout_read(Duration::from_secs(120))
                 .user_agent(USER_AGENT)
                 .build(),
-            min_gap: Duration::from_millis(MIN_GAP_MS),
+            min_gap: Duration::from_millis(ms),
             last_req: Cell::new(None),
         }
     }

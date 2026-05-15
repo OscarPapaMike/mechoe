@@ -43,6 +43,9 @@ enum Command {
         /// Card frame style.
         #[arg(long, value_enum, default_value_t = StyleArg::Basic)]
         style: StyleArg,
+        /// Draw colored debug outlines around every layout zone.
+        #[arg(long)]
+        debug_layout: bool,
     },
     /// Generate Windsor Heavy SVG files for generic mana numerals (0–16, X).
     GenSymbols {
@@ -58,8 +61,8 @@ enum Command {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Render { card_json, art, out, dpi, fonts_dir, symbols_dir, style } => {
-            cmd_render(&card_json, art.as_deref(), &out, dpi, fonts_dir, symbols_dir, style)
+        Command::Render { card_json, art, out, dpi, fonts_dir, symbols_dir, style, debug_layout } => {
+            cmd_render(&card_json, art.as_deref(), &out, dpi, fonts_dir, symbols_dir, style, debug_layout)
         }
         Command::GenSymbols { out_dir, fonts_dir } => {
             cmd_gen_symbols(out_dir, fonts_dir)
@@ -72,8 +75,19 @@ fn resolve_meta_subdir(name: &str) -> Option<PathBuf> {
         let p = PathBuf::from(base).join("_meta").join(name);
         if p.is_dir() { return Some(p); }
     }
-    let p = PathBuf::from("data").join("_meta").join(name);
-    if p.is_dir() { Some(p) } else { None }
+    // Walk up from cwd looking for data/_meta/<name>/.
+    if let Ok(cwd) = std::env::current_dir() {
+        let mut dir = cwd.as_path();
+        loop {
+            let p = dir.join("data").join("_meta").join(name);
+            if p.is_dir() { return Some(p); }
+            match dir.parent() {
+                Some(parent) => dir = parent,
+                None => break,
+            }
+        }
+    }
+    None
 }
 
 fn resolve_symbols_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
@@ -104,6 +118,7 @@ fn cmd_render(
     fonts_dir: Option<PathBuf>,
     symbols_dir: Option<PathBuf>,
     style: StyleArg,
+    debug_layout: bool,
 ) -> Result<()> {
     let json_bytes = std::fs::read(card_json)
         .with_context(|| format!("reading card JSON {}", card_json.display()))?;
@@ -119,6 +134,7 @@ fn cmd_render(
             StyleArg::Basic   => CardStyle::Basic,
             StyleArg::Classic => CardStyle::Classic,
         },
+        debug_layout,
     };
     let png = render_png(&card, art, &opts).context("rendering card")?;
 

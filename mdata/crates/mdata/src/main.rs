@@ -50,6 +50,9 @@ enum Command {
     Pull {
         /// Three-letter set code, e.g. DRK.
         set_code: String,
+        /// Minimum milliseconds between requests (default 150).
+        #[arg(long, default_value_t = 150)]
+        rate_ms: u64,
     },
 
     /// Show all printings of a card without downloading anything.
@@ -67,7 +70,7 @@ fn main() -> Result<()> {
         Command::Sync => cmd_sync(&data),
         Command::Fetch { name, info_only } => cmd_fetch(&data, &name, info_only),
         Command::Get { set_code, collector_number } => cmd_get(&data, &set_code, &collector_number),
-        Command::Pull { set_code } => cmd_pull(&data, &set_code),
+        Command::Pull { set_code, rate_ms } => cmd_pull(&data, &set_code, rate_ms),
         Command::Info { name } => cmd_info(&data, &name),
     }
 }
@@ -174,7 +177,7 @@ fn cmd_get(data: &std::path::Path, set_code: &str, collector_number: &str) -> Re
     Ok(())
 }
 
-fn cmd_pull(data: &std::path::Path, set_code: &str) -> Result<()> {
+fn cmd_pull(data: &std::path::Path, set_code: &str, rate_ms: u64) -> Result<()> {
     let conn = open_index(&index_path(data))
         .context("opening index — run `mdata sync` first")?;
     let records = find_by_set(&conn, set_code).context("querying index")?;
@@ -186,8 +189,8 @@ fn cmd_pull(data: &std::path::Path, set_code: &str) -> Result<()> {
     }
 
     let set_upper = set_code.to_uppercase();
-    eprintln!("[pull] {} cards in set {set_upper}", records.len());
-    let client = Client::new();
+    eprintln!("[pull] {} cards in set {set_upper} (rate: {rate_ms}ms)", records.len());
+    let client = Client::with_rate_ms(rate_ms);
 
     let mut json_written = 0usize;
     let mut art_written = 0usize;
