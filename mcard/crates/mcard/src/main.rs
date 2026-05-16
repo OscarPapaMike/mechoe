@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 
-use mart_core::{render_png, symbol_gen, Card, CardStyle, Dpi, RenderOptions};
-use mart_core::fonts::Fonts;
+use mcard_core::{render_png, symbol_gen, Card, CardStyle, Dpi, RenderOptions};
+use mcard_core::fonts::Fonts;
 
 #[derive(ValueEnum, Clone, Debug, Default)]
 enum StyleArg {
@@ -14,7 +14,7 @@ enum StyleArg {
 }
 
 #[derive(Parser)]
-#[command(name = "mart", version, about = "MTG proxy card generator")]
+#[command(name = "mcard", version, about = "MTG proxy card generator")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

@@ -1,4 +1,4 @@
-# mart — artwork design reference
+# mcard — artwork design reference
 
 This document describes how every visual element on a rendered card is sized and positioned. All layout is done in millimeters; pixels appear only at the final rasterization step. The source of truth for each value is noted so changes can be made in the right place.
 
@@ -6,7 +6,7 @@ This document describes how every visual element on a rendered card is sized and
 
 ## Coordinate system
 
-Origin is the top-left corner of the card. X increases right, Y increases down. All constants live in `crates/mart-core/src/geometry.rs` and `frame.rs`.
+Origin is the top-left corner of the card. X increases right, Y increases down. All constants live in `crates/mcard-core/src/geometry.rs` and `frame.rs`.
 
 ```
 (0, 0) ─────────────────────────────► X
@@ -229,7 +229,7 @@ Creatures only. Drawn right-aligned with equal offset from the inner card edges.
 
 ## Fonts
 
-Loaded by `crates/mart-core/src/fonts.rs` via Skia's macOS font manager, which picks up fonts installed in `~/Library/Fonts/`. Each face has a system fallback.
+Loaded by `crates/mcard-core/src/fonts.rs` via Skia's macOS font manager, which picks up fonts installed in `~/Library/Fonts/`. Each face has a system fallback.
 
 | Field | Face | Used for | Fallback |
 |---|---|---|---|

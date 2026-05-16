@@ -11,4 +11,4 @@ serde_json.workspace = true
 rusqlite.workspace   = true
 
 mdata-core = { path = "../../../mdata/crates/mdata-core" }
-mart-core  = { path = "../../../mart/crates/mart-core"  }
+mcard-core = { path = "../../../mcard/crates/mcard-core" }

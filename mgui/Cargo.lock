@@ -1987,7 +1987,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "mart-core"
+name = "mcard-core"
 version = "0.1.0"
 dependencies = [
  "resvg",
@@ -2056,7 +2056,7 @@ dependencies = [
  "egui",
  "fuzzy-matcher",
  "image",
- "mart-core",
+ "mcard-core",
  "mdata-core",
  "resvg",
  "serde_json",

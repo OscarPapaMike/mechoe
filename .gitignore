@@ -1,6 +1,8 @@
-data/
+data/sets/
 render/*
 !render/.gitkeep
+mimg/out/*.jpg
+mimg/out/*.png
 
 # Rust build artifacts
 target/

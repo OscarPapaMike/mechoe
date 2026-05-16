@@ -10,7 +10,7 @@ use mdata_core::{
     paths::{data_dir as resolve_data_dir, index_path},
     store::ensure_card,
 };
-use mart_core::{render_png, Card, CardStyle, Dpi, RenderOptions};
+use mcard_core::{render_png, Card, CardStyle, Dpi, RenderOptions};
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 

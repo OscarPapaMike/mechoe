@@ -25,6 +25,31 @@ pub struct Card {
     pub set_code: Option<String>,
     #[serde(default)]
     pub collector_number: Option<String>,
+    /// Scryfall layout. "split" triggers two-mini rendering.
+    #[serde(default)]
+    pub layout: Option<String>,
+    /// Per-face data for split / transform / mdfc cards.
+    #[serde(default)]
+    pub card_faces: Option<Vec<CardFace>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CardFace {
+    pub name: String,
+    #[serde(default)]
+    pub mana_cost: Option<String>,
+    #[serde(default)]
+    pub type_line: Option<String>,
+    #[serde(default)]
+    pub oracle_text: Option<String>,
+    #[serde(default)]
+    pub flavor_text: Option<String>,
+    #[serde(default)]
+    pub power: Option<String>,
+    #[serde(default)]
+    pub toughness: Option<String>,
+    #[serde(default)]
+    pub colors: Option<Vec<String>>,
 }
 
 impl Card {
@@ -111,6 +136,44 @@ impl Card {
 
 fn strip_prefix_then_dash<'a>(s: &'a str, prefix: &str, dash: &str) -> Option<&'a str> {
     s.strip_prefix(prefix).and_then(|rest| rest.strip_prefix(dash))
+}
+
+impl Card {
+    /// Synthesize a single-face `Card` from one face of a multi-face card.
+    /// Used by the split-card renderer to feed each half through the normal pipeline.
+    pub fn face_as_card(&self, face: &CardFace) -> Card {
+        let colors = face.colors.clone().unwrap_or_else(|| {
+            colors_from_mana_cost(face.mana_cost.as_deref().unwrap_or(""))
+        });
+        Card {
+            name: face.name.clone(),
+            mana_cost: face.mana_cost.clone(),
+            type_line: face.type_line.clone().unwrap_or_else(|| self.type_line.clone()),
+            oracle_text: face.oracle_text.clone(),
+            flavor_text: face.flavor_text.clone(),
+            power: face.power.clone(),
+            toughness: face.toughness.clone(),
+            colors: Some(colors),
+            color_identity: self.color_identity.clone(),
+            set_code: self.set_code.clone(),
+            collector_number: self.collector_number.clone(),
+            layout: None,
+            card_faces: None,
+        }
+    }
+}
+
+fn colors_from_mana_cost(s: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for c in ['W', 'U', 'B', 'R', 'G'] {
+        let bracketed = format!("{{{}}}", c);
+        let hybrid_left  = format!("{}/", c);
+        let hybrid_right = format!("/{}", c);
+        if s.contains(&bracketed) || s.contains(&hybrid_left) || s.contains(&hybrid_right) {
+            out.push(c.to_string());
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

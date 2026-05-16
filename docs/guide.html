@@ -191,13 +191,13 @@
 <div class="page">
 
 <h1>mechoe</h1>
-<p class="subtitle">Tool guide — mdata · mart · mgui · mtable</p>
+<p class="subtitle">Tool guide — mdata · mcard · mgui · mtable</p>
 
 <nav>
   <p>Jump to tool</p>
   <ul>
     <li><a href="#mdata">mdata</a></li>
-    <li><a href="#mart">mart</a></li>
+    <li><a href="#mcard">mcard</a></li>
     <li><a href="#mgui">mgui</a></li>
     <li><a href="#mtable">mtable</a></li>
   </ul>
@@ -292,16 +292,16 @@ mdata pull DRK</pre>
 </div>
 
 
-<!-- ═══════════════════════════════════════════ mart ═══ -->
-<div class="tool-section" id="mart">
-<h2>mart <span class="role cli">CLI</span></h2>
+<!-- ═══════════════════════════════════════════ mcard ═══ -->
+<div class="tool-section" id="mcard">
+<h2>mcard <span class="role cli">CLI</span></h2>
 <p>MTG proxy card renderer. Takes a Scryfall-format JSON file and an optional art
 image and produces a high-resolution PNG card in a 1993-era premodern frame style.</p>
 
 <h3>Building &amp; running</h3>
-<pre><span class="comment"># from mechoe/mart/</span>
+<pre><span class="comment"># from mechoe/mcard/</span>
 ~/.cargo/bin/cargo build --release
-./target/release/mart &lt;command&gt; [args]
+./target/release/mcard &lt;command&gt; [args]
 
 <span class="comment"># or during development</span>
 ~/.cargo/bin/cargo run -- &lt;command&gt; [args]</pre>
@@ -313,7 +313,7 @@ current directory. Override with flags or <code>MECHOE_DATA</code>.</p>
 
 <h3>render</h3>
 <p>Render a single card to PNG.</p>
-<pre>mart render &lt;card.json&gt; [art.jpg] [options]</pre>
+<pre>mcard render &lt;card.json&gt; [art.jpg] [options]</pre>
 
 <dl>
   <dt>card.json</dt>
@@ -336,25 +336,25 @@ current directory. Override with flags or <code>MECHOE_DATA</code>.</p>
 <h3>gen-symbols</h3>
 <p>Generate SVG files for generic mana numerals (0–16, X, T) using Windsor Heavy.
 Run this after changing the font or numeral styling.</p>
-<pre>mart gen-symbols [--out-dir &lt;dir&gt;] [--fonts-dir &lt;dir&gt;]</pre>
+<pre>mcard gen-symbols [--out-dir &lt;dir&gt;] [--fonts-dir &lt;dir&gt;]</pre>
 <p>Output defaults to <code>data/_meta/symbols/</code>.</p>
 
 <h3>Examples</h3>
 <pre><span class="comment"># Render at 300 DPI with placeholder art</span>
-mart render data/LEA/1.json -o /tmp/ancestral_recall.png
+mcard render data/LEA/1.json -o /tmp/ancestral_recall.png
 
 <span class="comment"># Render with art at print quality</span>
-mart render data/LEA/1.json data/LEA/1.jpg -o /tmp/ancestral_recall.png --dpi 1200
+mcard render data/LEA/1.json data/LEA/1.jpg -o /tmp/ancestral_recall.png --dpi 1200
 
 <span class="comment"># Render a card fetched by mdata (art + JSON)</span>
 mdata fetch "Birds of Paradise"
-mart render data/LEA/35.json data/LEA/35.jpg -o /tmp/bop.png --dpi 600
+mcard render data/LEA/35.json data/LEA/35.jpg -o /tmp/bop.png --dpi 600
 
 <span class="comment"># Regenerate numeral symbols after font change</span>
-mart gen-symbols</pre>
+mcard gen-symbols</pre>
 
 <h3>Card JSON format</h3>
-<p>mart reads standard Scryfall card JSON. Key fields used:</p>
+<p>mcard reads standard Scryfall card JSON. Key fields used:</p>
 <table>
   <tr><th>Field</th><th>Used for</th></tr>
   <tr><td>name</td><td>Title bar text</td></tr>
@@ -385,13 +385,13 @@ designs without re-running the CLI.</p>
 Scryfall JSON file and an optional art file. The card re-renders automatically
 when either file is modified on disk.</p>
 
-<p>The preview respects the same rendering pipeline as <code>mart render</code> — what
-you see in mgui is what you get from mart.</p>
+<p>The preview respects the same rendering pipeline as <code>mcard render</code> — what
+you see in mgui is what you get from mcard.</p>
 
 <h3>Tips</h3>
 <ul style="padding-left:1.4rem; margin:0.5rem 0;">
   <li>Use <code>mdata fetch</code> to get a card JSON, then open it in mgui while editing.</li>
-  <li>mgui renders at screen resolution; use <code>mart render --dpi 1200</code> for the final file.</li>
+  <li>mgui renders at screen resolution; use <code>mcard render --dpi 1200</code> for the final file.</li>
 </ul>
 </div>
 
@@ -452,7 +452,7 @@ artwork, z-order) to <code>mtable_save.json</code> in the working directory.
   <li>Run <code>mdata sync</code> once to build the local index (requires internet).</li>
   <li>Use <code>mdata fetch "Card Name"</code> to download a card's JSON and art into <code>data/</code>.</li>
   <li>Open the JSON in <strong>mgui</strong> for a live preview while tweaking.</li>
-  <li>Run <code>mart render data/SET/NUM.json data/SET/NUM.jpg -o out.png --dpi 1200</code> to produce the final print-quality PNG.</li>
+  <li>Run <code>mcard render data/SET/NUM.json data/SET/NUM.jpg -o out.png --dpi 1200</code> to produce the final print-quality PNG.</li>
   <li>Load finished cards into <strong>mtable</strong> to play with them on a virtual board.</li>
 </ol>
 

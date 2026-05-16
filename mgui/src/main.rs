@@ -5,7 +5,7 @@ use std::sync::mpsc;
 use eframe::egui::{self, scroll_area::ScrollBarVisibility, Color32, RichText, ScrollArea, TextEdit};
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use mart_core::symbols::{parse_mana_cost_inline, InlineSpan};
+use mcard_core::symbols::{parse_mana_cost_inline, InlineSpan};
 use mdata_core::{
     http::Client,
     index::CardRecord,
@@ -13,7 +13,7 @@ use mdata_core::{
     store::ensure_card,
     Database,
 };
-use mart_core::{render_png, Card, CardStyle, Dpi, RenderOptions};
+use mcard_core::{render_png, Card, CardStyle, Dpi, RenderOptions};
 
 // ── types ────────────────────────────────────────────────────────────────────
 

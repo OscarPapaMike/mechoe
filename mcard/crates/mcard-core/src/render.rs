@@ -12,7 +12,7 @@ use crate::fonts::Fonts;
 use crate::frame::{CardStyle, FrameSpec};
 use crate::geometry::{card_size_px, Dpi, MmRect, CARD_HEIGHT_MM, CARD_WIDTH_MM};
 use crate::rules::draw_rules;
-use crate::scryfall::Card;
+use crate::scryfall::{Card, CardFace};
 use crate::symbols::{parse_mana_cost, SymbolCache};
 use crate::text::{draw_in_rect, HAlign, TextStyle};
 
@@ -59,12 +59,59 @@ pub fn render_png(
     art_path: Option<&Path>,
     opts: &RenderOptions,
 ) -> Result<Vec<u8>, RenderError> {
-    let dpi = opts.dpi;
-    let (w_px, h_px) = card_size_px(dpi);
+    let art_image = match art_path {
+        Some(p) => Some(load_art_image(p)?),
+        None => None,
+    };
 
-    let mut frame = match opts.card_style {
-        CardStyle::Basic   => FrameSpec::basic(card.frame_color()),
-        CardStyle::Classic => FrameSpec::classic(card.frame_color()),
+    let mut surface = if card.layout.as_deref() == Some("split") {
+        if let Some(faces) = card.card_faces.as_ref().filter(|f| f.len() >= 2) {
+            render_split_to_surface(card, faces, art_image.as_ref(), opts)?
+        } else {
+            render_to_surface(card, art_image.as_ref(), None, opts)?
+        }
+    } else {
+        render_to_surface(card, art_image.as_ref(), None, opts)?
+    };
+
+    let snapshot = surface.image_snapshot();
+    let mut ctx = surface.direct_context();
+    let png = snapshot
+        .encode(ctx.as_mut(), EncodedImageFormat::PNG, None)
+        .ok_or(RenderError::PngEncode)?;
+    Ok(png.as_bytes().to_vec())
+}
+
+fn render_to_surface(
+    card: &Card,
+    art_image: Option<&Image>,
+    art_src: Option<skia_safe::Rect>,
+    opts: &RenderOptions,
+) -> Result<skia_safe::Surface, RenderError> {
+    render_to_surface_sized(card, art_image, art_src, opts, None)
+}
+
+fn render_to_surface_sized(
+    card: &Card,
+    art_image: Option<&Image>,
+    art_src: Option<skia_safe::Rect>,
+    opts: &RenderOptions,
+    card_size_mm: Option<(f32, f32)>,
+) -> Result<skia_safe::Surface, RenderError> {
+    let dpi = opts.dpi;
+    let is_split_face = card_size_mm.is_some();
+    let (w_px, h_px) = match card_size_mm {
+        Some((w_mm, h_mm)) => (
+            (w_mm * dpi.px_per_mm()).round() as i32,
+            (h_mm * dpi.px_per_mm()).round() as i32,
+        ),
+        None => card_size_px(dpi),
+    };
+
+    let mut frame = match (opts.card_style, card_size_mm) {
+        (CardStyle::Basic,   Some((w, h))) => FrameSpec::basic_with_size(card.frame_color(), w, h),
+        (CardStyle::Basic,   None)         => FrameSpec::basic(card.frame_color()),
+        (CardStyle::Classic, _)            => FrameSpec::classic(card.frame_color()),
     };
     // Basic lands: title bar uses the generic Land color, type area keeps the land's identity color.
     if card.type_line.contains("Basic Land") {
@@ -186,8 +233,8 @@ pub fn render_png(
 
     // 4. Art (covers the middle band between title and alt area).
     let art_rect_px = frame.art_box.to_skia(dpi);
-    if let Some(path) = art_path {
-        draw_art(canvas, path, art_rect_px)?;
+    if let Some(image) = art_image {
+        draw_art(canvas, image, art_src, art_rect_px);
     } else {
         let mut placeholder = Paint::default();
         placeholder.set_anti_alias(true);
@@ -466,7 +513,7 @@ pub fn render_png(
             /* min         */ mm_to_px(1.7, dpi),
             /* skew        */ 0.0,
             /* color       */ Color::BLACK,
-            /* center      */ Some(2),
+            /* center      */ if is_split_face { Some(usize::MAX) } else { Some(2) },
             /* notch       */ pt_notch_px,
             /* shadow      */ None,
             /* center_h    */ creature_center_h,
@@ -567,13 +614,100 @@ pub fn render_png(
         }
     }
 
-    // Encode PNG.
-    let snapshot = surface.image_snapshot();
-    let mut ctx = surface.direct_context();
-    let png = snapshot
-        .encode(ctx.as_mut(), EncodedImageFormat::PNG, None)
-        .ok_or(RenderError::PngEncode)?;
-    Ok(png.as_bytes().to_vec())
+    Ok(surface)
+}
+
+fn render_split_to_surface(
+    parent: &Card,
+    faces: &[CardFace],
+    art_image: Option<&Image>,
+    opts: &RenderOptions,
+) -> Result<skia_safe::Surface, RenderError> {
+    let dpi = opts.dpi;
+    let (w_px, h_px) = card_size_px(dpi);
+
+    let mut surface =
+        surfaces::raster_n32_premul((w_px, h_px)).ok_or(RenderError::SurfaceAlloc)?;
+    let canvas = surface.canvas();
+    canvas.clear(Color::TRANSPARENT);
+
+    // Parent black rounded card-stock (so the gap between minis and the
+    // outer corners look like a normal card border).
+    let frame_for_border = FrameSpec::basic(parent.frame_color());
+    let outer_rect_px = frame_for_border.outer_rect().to_skia(dpi);
+    let radius = frame_for_border.corner_radius_mm * dpi.px_per_mm();
+    let rrect = RRect::new_rect_radii(outer_rect_px, &[Vector::new(radius, radius); 4]);
+    let mut black = Paint::default();
+    black.set_anti_alias(true);
+    black.set_color(Color::BLACK);
+    canvas.draw_rrect(rrect, &black);
+
+    // Split source art horizontally: left half → face 0, right half → face 1.
+    let face_srcs: [Option<skia_safe::Rect>; 2] = match art_image {
+        Some(img) => {
+            let w = img.width()  as f32;
+            let h = img.height() as f32;
+            let mid = w * 0.5;
+            [
+                Some(skia_safe::Rect::new(0.0, 0.0, mid, h)),
+                Some(skia_safe::Rect::new(mid, 0.0, w,   h)),
+            ]
+        }
+        None => [None, None],
+    };
+
+    // Render each face at its true post-rotation footprint (44.45 × 63.5 mm),
+    // not the full 63.5 × 88.9, so absolute-mm text and symbols stay at
+    // full-card sizes inside the smaller mini frame.
+    let mini_w_mm = CARD_HEIGHT_MM * 0.5; // 44.45
+    let mini_h_mm = CARD_WIDTH_MM;        // 63.5
+    let mut face_images: Vec<Image> = Vec::with_capacity(2);
+    for (i, face) in faces.iter().take(2).enumerate() {
+        let face_card = parent.face_as_card(face);
+        let mut face_surface = render_to_surface_sized(
+            &face_card,
+            art_image,
+            face_srcs[i],
+            opts,
+            Some((mini_w_mm, mini_h_mm)),
+        )?;
+        face_images.push(face_surface.image_snapshot());
+    }
+
+    // Slot layout — face 0 on bottom, face 1 on top.
+    let half_h = h_px as f32 * 0.5;
+    let slots = [
+        skia_safe::Rect::new(0.0, half_h, w_px as f32, h_px as f32), // face 0 (bottom)
+        skia_safe::Rect::new(0.0, 0.0,    w_px as f32, half_h),      // face 1 (top)
+    ];
+    for (img, slot) in face_images.iter().zip(slots.iter()) {
+        composite_rotated_face(canvas, img, *slot);
+    }
+
+    Ok(surface)
+}
+
+/// Draw a portrait face image rotated 90° CCW, scaled-to-fit and centered in `slot`.
+fn composite_rotated_face(canvas: &skia_safe::Canvas, face_image: &Image, slot: skia_safe::Rect) {
+    let face_w = face_image.width()  as f32;
+    let face_h = face_image.height() as f32;
+
+    // After 90° CCW rotation, post-rotation bounding box is (face_h × face_w).
+    let scale = (slot.width() / face_h).min(slot.height() / face_w);
+    let rendered_w = face_h * scale;
+    let rendered_h = face_w * scale;
+    let cx = slot.left + (slot.width()  - rendered_w) * 0.5 + rendered_w * 0.5;
+    let cy = slot.top  + (slot.height() - rendered_h) * 0.5 + rendered_h * 0.5;
+
+    canvas.save();
+    canvas.translate((cx, cy));
+    canvas.rotate(-90.0, None); // 90° counter-clockwise
+    canvas.scale((scale, scale));
+    let dst = skia_safe::Rect::from_xywh(-face_w * 0.5, -face_h * 0.5, face_w, face_h);
+    let mut paint = Paint::default();
+    paint.set_anti_alias(true);
+    canvas.draw_image_rect(face_image, None, dst, &paint);
+    canvas.restore();
 }
 
 fn draw_mana_cost(
@@ -701,18 +835,23 @@ fn draw_set_symbol(
     }
 }
 
-fn draw_art(
-    canvas: &skia_safe::Canvas,
-    path: &Path,
-    dst: skia_safe::Rect,
-) -> Result<(), RenderError> {
+fn load_art_image(path: &Path) -> Result<Image, RenderError> {
     let bytes = std::fs::read(path)?;
     let data = Data::new_copy(&bytes);
-    let image = Image::from_encoded(data).ok_or(RenderError::ArtDecode)?;
+    Image::from_encoded(data).ok_or(RenderError::ArtDecode)
+}
+
+fn draw_art(
+    canvas: &skia_safe::Canvas,
+    image: &Image,
+    src: Option<skia_safe::Rect>,
+    dst: skia_safe::Rect,
+) {
     let mut paint = Paint::default();
     paint.set_anti_alias(true);
-    canvas.draw_image_rect(&image, None, dst, &paint);
-    Ok(())
+    let src_arg = src.as_ref()
+        .map(|r| (r, skia_safe::canvas::SrcRectConstraint::Strict));
+    canvas.draw_image_rect(image, src_arg, dst, &paint);
 }
 
 /// Textures all classic rail areas (title bar, side rails, type rail, bottom rail).

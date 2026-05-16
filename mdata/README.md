@@ -1,6 +1,6 @@
 # mdata
 
-Scryfall data manager for the mechoe toolchain. Maintains a local cache of card JSON and art-crop images so downstream tools (like `mart`) can work fully offline after an initial sync.
+Scryfall data manager for the mechoe toolchain. Maintains a local cache of card JSON and art-crop images so downstream tools (like `mcard`) can work fully offline after an initial sync.
 
 ## Overview
 
@@ -9,7 +9,7 @@ Scryfall data manager for the mechoe toolchain. Maintains a local cache of card 
 ```
 mdata sync                        # one-time setup (~540 MB download)
 mdata fetch "Pouncing Jaguar"     # → data/USG/269.json + data/USG/269.jpg
-mart render data/USG/269.json data/USG/269.jpg -o jaguar.png
+mcard render data/USG/269.json data/USG/269.jpg -o jaguar.png
 ```
 
 ## Architecture
@@ -50,7 +50,7 @@ Scryfall bulk API
       │  writes data/<SET>/<NUM>.json from index
       │  fetches data/<SET>/<NUM>.jpg from Scryfall image server (if not cached)
       ▼
- data/<SET>/<NUM>.json + .jpg     ← ready for mart render
+ data/<SET>/<NUM>.json + .jpg     ← ready for mcard render
 ```
 
 ### Why `default_cards` bulk data
@@ -101,7 +101,7 @@ CREATE TABLE cards (
     collector_number TEXT NOT NULL,
     released_at      TEXT NOT NULL,   -- ISO date, sortable as text
     art_crop_url     TEXT,
-    card_json        TEXT NOT NULL    -- full Scryfall JSON for mart rendering
+    card_json        TEXT NOT NULL    -- full Scryfall JSON for mcard rendering
 );
 CREATE INDEX idx_name   ON cards(name COLLATE NOCASE);
 CREATE INDEX idx_set    ON cards(set_code, collector_number);
@@ -248,8 +248,8 @@ mdata info "Lightning Bolt"
 - `mdata sync --force` to override
 
 ### Phase 4 — `mdata` as a library dependency
-- `mart` takes an optional `mdata-core` path dep so `mart fetch-render` can combine lookup + render in one command
-- Shared `CardRecord` type replaces mart's local Scryfall serde struct
+- `mcard` takes an optional `mdata-core` path dep so `mcard fetch-render` can combine lookup + render in one command
+- Shared `CardRecord` type replaces mcard's local Scryfall serde struct
 
 ### Phase 5 — Set metadata
 - Download Scryfall set objects (`/sets`) into a second `sets` table

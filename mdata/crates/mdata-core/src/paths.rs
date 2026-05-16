@@ -44,14 +44,19 @@ pub fn symbols_dir(data_dir: &Path) -> PathBuf {
     meta_dir(data_dir).join("symbols")
 }
 
+/// Per-set card folders live under `data/sets/<SET>/`.
+pub fn sets_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("sets")
+}
+
 pub fn card_json_path(data_dir: &Path, set_code: &str, collector_number: &str) -> PathBuf {
-    data_dir
+    sets_dir(data_dir)
         .join(set_code.to_uppercase())
         .join(format!("{collector_number}.json"))
 }
 
 pub fn card_art_path(data_dir: &Path, set_code: &str, collector_number: &str) -> PathBuf {
-    data_dir
+    sets_dir(data_dir)
         .join(set_code.to_uppercase())
         .join(format!("{collector_number}.jpg"))
 }

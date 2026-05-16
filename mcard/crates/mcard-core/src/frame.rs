@@ -21,6 +21,11 @@ pub struct FrameSpec {
     pub card_style: CardStyle,
     /// Width of the colored frame rails on each side (0 for Basic).
     pub frame_rail_mm: f32,
+    /// Physical card dimensions.  Defaults to standard 63.5 × 88.9 mm; the
+    /// split-card path passes 44.45 × 63.5 for each mini face so absolute-mm
+    /// text and symbols stay at full-card sizes inside a smaller frame.
+    pub card_w_mm: f32,
+    pub card_h_mm: f32,
 
     pub title_bar: MmRect,        // filled with main_color
     pub mana_anchor: (f32, f32),  // top-right corner of mana cost
@@ -36,36 +41,50 @@ pub struct FrameSpec {
 }
 
 impl FrameSpec {
-    /// Flat two-color layout (current default).
+    /// Flat two-color layout at standard card size.
     pub fn basic(frame_color: FrameColor) -> Self {
-        let border_mm = 3.0;
-        let inner_w = CARD_WIDTH_MM - 2.0 * border_mm;   // 57.5
-        let title_h = 5.25;
-        let title_y = border_mm;                           // 3.0
-        let art_y   = title_y + title_h;                   // 8.25
-        let art_h   = 45.95;
-        let alt_top = art_y + art_h;                       // 54.2
+        Self::basic_with_size(frame_color, CARD_WIDTH_MM, CARD_HEIGHT_MM)
+    }
 
-        let type_y = alt_top + 0.75;                       // 54.95
+    /// Flat two-color layout at a custom card size.  Title bar, type bar, and
+    /// gaps stay fixed (so absolute-mm text/symbols read the same regardless of
+    /// frame size); art and rules box absorb the remaining vertical space using
+    /// the same 64.3 / 35.7 split as the full card.
+    pub fn basic_with_size(frame_color: FrameColor, card_w: f32, card_h: f32) -> Self {
+        let border_mm = 3.0;
+        let inner_w = card_w - 2.0 * border_mm;
+        let title_h = 5.25;
+        let title_y = border_mm;
+        let art_y   = title_y + title_h;
+        let inner_bot = card_h - border_mm;
+
         let type_h = 4.2;
+        let alt_gap = 0.75;
         let rules_gap = 0.7;
-        let rules_y = type_y + type_h + rules_gap;         // 59.85
-        let inner_bot = CARD_HEIGHT_MM - border_mm;         // 85.9
-        let rules_h = (inner_bot - rules_y - 0.5).max(0.0);
+        let bottom_pad = 0.5;
+        let avail_h = (inner_bot - art_y - alt_gap - type_h - rules_gap - bottom_pad).max(0.0);
+        let rules_h = avail_h * 0.357;
+        let art_h   = avail_h * 0.643;
+
+        let alt_top = art_y + art_h;
+        let type_y  = alt_top + alt_gap;
+        let rules_y = type_y + type_h + rules_gap;
 
         let pt_h = 8.0;
         let pt_w = 16.0;
-        let pt_y = CARD_HEIGHT_MM - border_mm - pt_h - 0.5;
-        let pt_x = CARD_WIDTH_MM  - border_mm - pt_w - 0.5;
+        let pt_y = card_h - border_mm - pt_h - 0.5;
+        let pt_x = card_w - border_mm - pt_w - 0.5;
 
         Self {
             border_mm,
             corner_radius_mm: 2.5,
             card_style: CardStyle::Basic,
             frame_rail_mm: 0.0,
+            card_w_mm: card_w,
+            card_h_mm: card_h,
 
             title_bar:   MmRect::new(border_mm, title_y, inner_w, title_h),
-            mana_anchor: (CARD_WIDTH_MM - border_mm - 1.5, title_y + title_h * 0.5),
+            mana_anchor: (card_w - border_mm - 1.5, title_y + title_h * 0.5),
             art_box:     MmRect::new(border_mm, art_y, inner_w, art_h),
             type_bar:    MmRect::new(border_mm + 2.0, type_y, inner_w - 4.0, type_h),
             rules_box:   MmRect::new(border_mm + 2.0, rules_y, inner_w - 4.0, rules_h),
@@ -124,6 +143,8 @@ impl FrameSpec {
             corner_radius_mm: 2.5,
             card_style: CardStyle::Classic,
             frame_rail_mm: side_rail,
+            card_w_mm: CARD_WIDTH_MM,
+            card_h_mm: CARD_HEIGHT_MM,
 
             title_bar:   MmRect::new(border_mm, border_mm, inner_w, top_rail),
             mana_anchor: (art_x + art_w, border_mm + top_rail * 0.5),
@@ -142,15 +163,15 @@ impl FrameSpec {
     pub fn m15(frame_color: FrameColor)       -> Self { Self::basic(frame_color) }
 
     pub fn outer_rect(&self) -> MmRect {
-        MmRect::new(0.0, 0.0, CARD_WIDTH_MM, CARD_HEIGHT_MM)
+        MmRect::new(0.0, 0.0, self.card_w_mm, self.card_h_mm)
     }
 
     pub fn inner_rect(&self) -> MmRect {
         MmRect::new(
             self.border_mm,
             self.border_mm,
-            CARD_WIDTH_MM - 2.0 * self.border_mm,
-            CARD_HEIGHT_MM - 2.0 * self.border_mm,
+            self.card_w_mm - 2.0 * self.border_mm,
+            self.card_h_mm - 2.0 * self.border_mm,
         )
     }
 

@@ -1,15 +1,15 @@
 [package]
-name = "mart"
+name = "mcard"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "mart"
+name = "mcard"
 path = "src/main.rs"
 
 [dependencies]
-mart-core = { path = "../mart-core" }
+mcard-core = { path = "../mcard-core" }
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true

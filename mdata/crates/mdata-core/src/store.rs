@@ -8,7 +8,7 @@ pub struct CardPaths {
     pub art: Option<PathBuf>,
 }
 
-/// Ensure `data/<SET>/<NUM>.json` and `data/<SET>/<NUM>.jpg` exist locally.
+/// Ensure `data/sets/<SET>/<NUM>.json` and `data/sets/<SET>/<NUM>.jpg` exist locally.
 /// JSON is written from the index; art is fetched from Scryfall if not already cached.
 pub fn ensure_card(
     client: &Client,
