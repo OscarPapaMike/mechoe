@@ -1,4 +1,6 @@
 data/sets/
+# Regenerable SQLite index built by `mdata sync` from the bulk JSON (~575MB).
+data/_meta/index.db
 render/*
 !render/.gitkeep
 mimg/out/*.jpg

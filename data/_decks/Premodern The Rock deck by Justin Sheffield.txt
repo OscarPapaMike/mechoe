@@ -1,0 +1,30 @@
+1 Blastoderm
+2 Deranged Hermit
+4 Ravenous Baloth
+4 Wall of Blossoms
+3 Wall of Roots
+2 Yavimaya Elder
+1 Diabolic Edict
+2 Naturalize
+2 Smother
+4 Cabal Therapy
+4 Duress
+4 Pernicious Deed
+2 Recurring Nightmare
+1 Sylvan Library
+8 Forest
+4 Llanowar Wastes
+8 Swamp
+4 Treetop Village
+
+Sideboard
+3 Engineered Plague
+1 Gaea's Blessing
+2 Gloom
+1 Haunting Echoes
+1 Naturalize
+2 Phyrexian Furnace
+1 Plague Spitter
+1 Silklash Spider
+2 Tranquil Domain
+1 Withered Wretch

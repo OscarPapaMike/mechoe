@@ -1,0 +1,26 @@
+# Standard render examples for mechoe
+# Covers all frame colors, creature/non-creature, flavor text, large mana costs, classic style
+
+Palette — one card per frame color
+- ULG 14    # Mother of Runes      (white)
+- DRK 30    # Leviathan            (blue)
+- TMP 107   # Abandon Hope         (black)
+- LEA 161   # Lightning Bolt       (red)
+- LEA 186   # Birds of Paradise    (green)
+- APC 94    # Cromat               (gold)
+- TMP 281   # Cursed Scroll        (artifact)
+- WTH 164   # Gemstone Mine        (land)
+- LEA 288   # Island               (basic land)
+- LEA 282   # Taiga                (dual land)
+
+Additional render examples
+- LEG 88    # All Hallow's Eve     (black sorcery, unusual rules text)
+- DRK 1     # Angry Mob            (white creature, flavor text)
+- LEG 218   # Arcades Sabboth      (gold elder dragon, long rules)
+- DRK 101   # Diabolic Machine     (artifact creature)
+- DRK 76    # Elves of Deep Shadow (green creature, short rules)
+- TMP 175   # Flowstone Salamander (red creature, flavor text)
+- LEA 194   # Force of Nature      (green creature, huge mana cost)
+- LEA 294   # Forest               (basic land)
+- DRK 28    # Ghost Ship           (blue creature, flavor text)
+- ULG 11    # Karmic Guide         (white creature, echo)

@@ -1,0 +1,39 @@
+# Bug-fix regression examples
+# Covers: P/T overlap, multicolor land flavor shadow, 3-color concentric rings
+
+Creature flavor/P/T overlap (fix 1)
+- ONS 77     # Crafty Pathmage      (blue wizard, oracle + flavor, P/T)
+- ONS 89     # Ixidor, Reality Sculptor (blue legend, oracle + flavor, P/T)
+- EXO 4      # Charging Paladin     (white creature, oracle + flavor, P/T)
+- TMP 167    # Canyon Wildcat       (red creature, flavor only, P/T)
+- STH 24     # Warrior Angel        (white creature, oracle + flavor, P/T)
+- USG 52     # Songstitcher         (white creature, oracle + flavor, P/T)
+- MMQ 167    # Undertaker           (black creature, oracle + flavor, P/T)
+- JUD 34     # Aven Fogbringer      (blue creature, oracle + flavor, P/T)
+- ODY 136    # Filthy Cur           (black creature, flavor only, P/T)
+
+Multicolor land flavor shadow (fix 2)
+- HML 113    # Castle Sengir        (black multicolor land, flavor text)
+- HML 114    # Koskun Keep          (black multicolor land, flavor text)
+- HML 111    # An-Havva Township    (G/W multicolor land, flavor text)
+- 6ED 321    # City of Brass        (multicolor land, flavor text)
+- UDS 143    # Yavimaya Hollow      (green multicolor land, flavor text)
+- ICE 353    # Glacial Chasm        (colorless land, flavor text)
+- ONS 330    # Wooded Foothills     (fetchland, flavor text)
+
+Three-color concentric rings (fix 3)
+- INV 319    # Ancient Spring       (W/U/B tri-color land)
+
+Short creature text centering
+- 6ED 239    # Llanowar Elves       (green creature, short oracle, P/T)
+- LEB 283    # Taiga                (dual land, no text)
+- 6ED 330    # Underground River    (non-basic land, short oracle)
+- ATQ 13     # Sage of Lat-Nam      (blue creature, oracle + flavor, P/T)
+
+Basic lands
+- LEA 286    # Plains
+- LEA 288    # Island
+- LEA 290    # Swamp
+- LEA 292    # Mountain
+- LEA 294    # Forest
+# Wastes not in data
